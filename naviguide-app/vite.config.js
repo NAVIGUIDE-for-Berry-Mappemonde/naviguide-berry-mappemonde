@@ -8,6 +8,18 @@ const isLocal = !process.env.VITE_DEPLOY_HOST;
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Append build timestamp to entry chunk name so each deployment
+        // produces a unique URL — prevents Cloudflare from serving a
+        // stale cached 404 for a previously-broken asset URL.
+        entryFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        chunkFileNames: `assets/[name]-[hash].js`,
+        assetFileNames: `assets/[name]-[hash][extname]`,
+      },
+    },
+  },
   server: {
     host: "0.0.0.0",
     port: 3009,
