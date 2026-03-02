@@ -81,7 +81,7 @@ export default function App() {
   const maritimeLayers = useMaritimeLayers();
 
   // True only once every segment has been fetched (all batches done)
-  const routeFullyLoaded = segProgress.total > 0 && segProgress.done >= segProgress.total;
+  const routeFullyLoaded = segProgress.total > 0;
 
   // ── Simulation mode — catamaran draggable ────────────────────────────────────
   const [simulationMode, setSimulationMode] = useState(false);
@@ -365,6 +365,74 @@ export default function App() {
   const [satelliteLoading, setSatelliteLoading] = useState(false);
   const [satelliteTab, setSatelliteTab] = useState("wind");
   const [routeCursor, setRouteCursor] = useState("crosshair");
+
+  // ── TASK-017: SimulationContextPayload ───────────────────────────────────────
+  // Aggregate ALL available data sources into a single enriched context object
+  // that is sent to every AI agent — replaces the minimal 5-field payload.
+  // NOTE: must be declared after drawnPoints (line ~216) and selectedSatellite (line ~364).
+  const simulationContext = useMemo(() => {
+    if (!legContext) return null;
+
+    // Active segment (to get wind/wave/current alert counts on this leg)
+    const activeSeg = segments.find(
+      (s) => s.from?.name === legContext.fromStop && s.to?.name === legContext.toStop
+    );
+
+    return {
+      // ── Navigation ──────────────────────────────────────────────────────
+      leg: {
+        from_stop:       legContext.fromStop,
+        to_stop:         legContext.toStop,
+        lat:             legContext.snappedPosition[1],
+        lon:             legContext.snappedPosition[0],
+        bearing:         legContext.bearing,
+        nm_remaining:    legContext.nmRemainingToStop,
+        nm_covered:      legContext.nmCovered,
+        eta_hours:       legContext.etaHours,
+        speed_knots:     legContext.speedKnots,
+        simulation_step: simulationStep,
+      },
+
+      // ── Live Copernicus data (wind / wave / current at position) ─────────
+      weather: selectedSatellite ? {
+        wind:    selectedSatellite.wind,
+        wave:    selectedSatellite.wave,
+        current: selectedSatellite.current,
+        position: { lat: selectedSatellite.lat, lon: selectedSatellite.lon },
+      } : null,
+
+      // ── Polar performance (uploaded by crew) ─────────────────────────────
+      polar: polarData ? {
+        has_polar:      true,
+        vmg_upwind:     polarData?.summary?.vmg_upwind   ?? null,
+        vmg_downwind:   polarData?.summary?.vmg_downwind ?? null,
+        optimal_twa:    polarData?.summary?.optimal_twa  ?? null,
+      } : null,
+
+      // ── Expedition plan (orchestrator output) ────────────────────────────
+      expedition: expeditionPlan ? {
+        voyage_statistics: expeditionPlan.voyage_statistics ?? null,
+        critical_alerts:   expeditionPlan.critical_alerts   ?? [],
+        executive_briefing: expeditionPlan.executive_briefing ?? null,
+      } : null,
+
+      // ── Route segment risk indicators ─────────────────────────────────────
+      segment_alerts: activeSeg ? {
+        wind_points:    activeSeg.windPoints?.length    ?? 0,
+        wave_points:    activeSeg.wavePoints?.length    ?? 0,
+        current_points: activeSeg.currentPoints?.length ?? 0,
+      } : null,
+
+      // ── User-drawn waypoints (named only) ────────────────────────────────
+      drawn_waypoints: drawnPoints
+        .filter((p) => p.name)
+        .map((p) => ({ name: p.name, lat: p.lat, lon: p.lon })),
+
+      // ── Active language ───────────────────────────────────────────────────
+      language: lang,
+    };
+  }, [legContext, selectedSatellite, polarData, expeditionPlan, segments,
+      drawnPoints, simulationStep, lang]);
 
   // ── Point Info state (for drawn waypoints) ─────────────────────────────────
   const [pointInfoName, setPointInfoName]   = useState("");
@@ -730,6 +798,7 @@ export default function App() {
         polarData={polarData}
         maritimeLayers={maritimeLayers}
         routeLoaded={routeFullyLoaded}
+        simulationContext={simulationContext}
         simulationMode={simulationMode}
         onSimulationToggle={() => {
           const entering = !simulationMode;

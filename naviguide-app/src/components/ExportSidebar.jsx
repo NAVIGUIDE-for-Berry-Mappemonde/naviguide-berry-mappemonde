@@ -312,6 +312,19 @@ export function ExportSidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polarFile]);
 
+  // ── Auto-load default polar on mount (only if no polar data already set) ───
+  useEffect(() => {
+    if (polarData) return; // already loaded (e.g. user uploaded custom file)
+    fetch("/default-polar.csv")
+      .then((r) => r.blob())
+      .then((blob) => {
+        const defaultFile = new File([blob], "berry-polar-default.csv", { type: "text/csv" });
+        handlePolarUpload(defaultFile);
+      })
+      .catch(() => {}); // silently ignore if file unavailable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handlePolarUpload = async (f) => {
     setPolarUploadStatus("uploading");
     setPolarUploadDetail("");

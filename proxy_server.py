@@ -147,7 +147,42 @@ async def proxy_orchestrator(request: Request, path: str):
 def health():
     return {"status": "ok", "service": "NAVIGUIDE Proxy Server"}
 
-# ── Static frontend (catch-all) ───────────────────────────────────────────────
+# ── index.html — served with no-cache headers so browsers always get the latest
+#    bundle hash. JS/CSS assets (content-hashed filenames) are still cached by
+#    the browser indefinitely via the StaticFiles mount below.
+@app.get("/")
+@app.get("/{path:path}")
+async def serve_spa(path: str = ""):
+    """
+    Serve index.html for all non-API, non-asset routes with Cache-Control: no-store
+    so the browser never serves a stale HTML referencing old bundle hashes.
+    Falls through to StaticFiles for real asset requests (handled below).
+    """
+    # Only intercept HTML navigation — let assets (js, css, png, …) be handled
+    # by the StaticFiles mount. We detect "real assets" by the presence of a dot
+    # extension that is NOT .html.
+    if "." in path.split("/")[-1] and not path.lower().endswith(".html"):
+        # Let FastAPI fall through to the StaticFiles mount
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404)
+
+    index_file = STATIC_DIR / "index.html"
+    if not index_file.exists():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Frontend not built yet")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        str(index_file),
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma":        "no-cache",
+            "Expires":       "0",
+        },
+    )
+
+# ── Static frontend assets (JS, CSS, images — long-lived, content-hashed) ────
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 # ── Entry point ───────────────────────────────────────────────────────────────

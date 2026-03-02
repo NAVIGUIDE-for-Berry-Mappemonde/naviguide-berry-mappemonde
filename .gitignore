@@ -34,3 +34,4 @@ naviguide_workspace/polar_data/
 
 # Vite build output
 naviguide-app/dist/
+.env.naviguide

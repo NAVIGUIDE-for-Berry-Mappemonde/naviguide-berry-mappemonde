@@ -101,7 +101,7 @@ function renderInline(text) {
  * @param {object|null} legContext  — résultat de useLegContext
  * @param {string}      language   — "fr" | "en"
  */
-export function AgentPanel({ legContext, language = "fr" }) {
+export function AgentPanel({ legContext, simulationContext, language = "fr" }) {
   const { t } = useLang();
   const [activeTab, setActiveTab] = useState("custom");
   const [agentStates, setAgentStates] = useState({
@@ -145,14 +145,18 @@ export function AgentPanel({ legContext, language = "fr" }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({
-          from_stop:    ctx.fromStop,
-          to_stop:      ctx.toStop,
-          lat:          ctx.snappedPosition[1],
-          lon:          ctx.snappedPosition[0],
-          nm_remaining: ctx.nmRemainingToStop,
-          language,
-        }),
+        body: JSON.stringify(
+          // Send full SimulationContextPayload when available (TASK-018),
+          // fall back to minimal fields for backward compatibility.
+          simulationContext ?? {
+            from_stop:    ctx.fromStop,
+            to_stop:      ctx.toStop,
+            lat:          ctx.snappedPosition[1],
+            lon:          ctx.snappedPosition[0],
+            nm_remaining: ctx.nmRemainingToStop,
+            language,
+          }
+        ),
       });
 
       if (!response.ok) {

@@ -4,7 +4,7 @@ import math
 import json
 import time
 import asyncio
-from typing import Optional, Union, List
+from typing import Any, Dict, Optional, Union, List
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -1113,12 +1113,45 @@ class SimulationPositionRequest(BaseModel):
 
 
 class AgentRequest(BaseModel):
-    from_stop:    str
-    to_stop:      str
-    lat:          float
-    lon:          float
-    nm_remaining: float
-    language:     str = "fr"
+    # ── Legacy / minimal fields (always present) ─────────────────────────────
+    from_stop:    str  = ""
+    to_stop:      str  = ""
+    lat:          float = 0.0
+    lon:          float = 0.0
+    nm_remaining: float = 0.0
+    language:     str   = "fr"
+
+    # ── SimulationContextPayload fields (TASK-017/018) ─────────────────────
+    # Sent when the full context is available (simulation mode active).
+    leg:              Optional[Dict[str, Any]] = None   # full leg metrics
+    weather:          Optional[Dict[str, Any]] = None   # Copernicus wind/wave/current
+    polar:            Optional[Dict[str, Any]] = None   # polar performance grid
+    expedition:       Optional[Dict[str, Any]] = None   # voyage stats + alerts + briefing
+    segment_alerts:   Optional[Dict[str, Any]] = None   # wind/wave/current alert counts
+    drawn_waypoints:  Optional[List[Dict]]     = None   # user-drawn named waypoints
+
+    def resolved_fields(self):
+        """Return canonical from_stop/to_stop/lat/lon/nm_remaining/language,
+        preferring the nested `leg` dict when the full payload is sent."""
+        leg = self.leg or {}
+        return {
+            "from_stop":    leg.get("from_stop",    self.from_stop),
+            "to_stop":      leg.get("to_stop",      self.to_stop),
+            "lat":          leg.get("lat",           self.lat),
+            "lon":          leg.get("lon",           self.lon),
+            "nm_remaining": leg.get("nm_remaining",  self.nm_remaining),
+            "language":     self.language,
+        }
+
+    def extra_context(self) -> Dict[str, Any]:
+        """Build the enriched context block passed to agent prompts."""
+        return {
+            "weather":         self.weather,
+            "polar":           self.polar,
+            "expedition":      self.expedition,
+            "segment_alerts":  self.segment_alerts,
+            "drawn_waypoints": self.drawn_waypoints or [],
+        }
 
 
 # ── Simulation Mode — /simulation/position ───────────────────────────────────
@@ -1186,15 +1219,18 @@ async def agent_custom(req: AgentRequest):
         from agents.deploy_ai import stream_llm
 
         # Build prompt (sync — no I/O, runs in current thread)
+        _fields = req.resolved_fields()
+        _extra  = req.extra_context()
         prompt = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: get_streaming_prompt(
-                from_stop=req.from_stop,
-                to_stop=req.to_stop,
-                lat=req.lat,
-                lon=req.lon,
-                nm_remaining=req.nm_remaining,
-                language=req.language,
+                from_stop=_fields["from_stop"],
+                to_stop=_fields["to_stop"],
+                lat=_fields["lat"],
+                lon=_fields["lon"],
+                nm_remaining=_fields["nm_remaining"],
+                language=_fields["language"],
+                extra_context=_extra,
             ),
         )
 
@@ -1209,7 +1245,7 @@ async def agent_custom(req: AgentRequest):
 
         if not has_content:
             fallback = (
-                f"## {req.to_stop} — Port Intelligence\n\n"
+                f"## {_fields['to_stop']} — Port Intelligence\n\n"
                 f"⚠️ **LLM service temporarily unavailable.**\n\n"
                 f"**Recommended resources:**\n"
                 f"- 🌐 [Noonsite](https://www.noonsite.com) — search for {req.to_stop}\n"
@@ -1236,15 +1272,18 @@ async def agent_guard(req: AgentRequest):
         from agents.deploy_ai import stream_llm
 
         # Build prompt — includes live IMB piracy-data fetch (sync, in threadpool)
+        _fields = req.resolved_fields()
+        _extra  = req.extra_context()
         prompt = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: get_streaming_prompt(
-                from_stop=req.from_stop,
-                to_stop=req.to_stop,
-                lat=req.lat,
-                lon=req.lon,
-                nm_remaining=req.nm_remaining,
-                language=req.language,
+                from_stop=_fields["from_stop"],
+                to_stop=_fields["to_stop"],
+                lat=_fields["lat"],
+                lon=_fields["lon"],
+                nm_remaining=_fields["nm_remaining"],
+                language=_fields["language"],
+                extra_context=_extra,
             ),
         )
 
@@ -1259,12 +1298,12 @@ async def agent_guard(req: AgentRequest):
 
         if not has_content:
             fallback = (
-                f"## {req.to_stop} — Maritime Security\n\n"
+                f"## {_fields['to_stop']} — Maritime Security\n\n"
                 f"⚠️ **LLM service temporarily unavailable.**\n\n"
                 f"**Recommended resources:**\n"
                 f"- 🌐 [IMB Piracy Reporting Centre](https://www.icc-ccs.org/piracy-reporting-centre)\n"
                 f"- 📡 VHF Ch 16 on arrival\n\n"
-                f"Distance remaining: **{req.nm_remaining:.0f} nm**."
+                f"Distance remaining: **{_fields['nm_remaining']:.0f} nm**."
             )
             yield f"data: {json.dumps({'token': fallback})}\n\n"
 
@@ -1285,15 +1324,18 @@ async def agent_meteo(req: AgentRequest):
         from agents.deploy_ai import stream_llm
 
         # Build prompt — includes StormGlass weather fetch (sync, in threadpool)
+        _fields = req.resolved_fields()
+        _extra  = req.extra_context()
         prompt = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: get_streaming_prompt(
-                from_stop=req.from_stop,
-                to_stop=req.to_stop,
-                lat=req.lat,
-                lon=req.lon,
-                nm_remaining=req.nm_remaining,
-                language=req.language,
+                from_stop=_fields["from_stop"],
+                to_stop=_fields["to_stop"],
+                lat=_fields["lat"],
+                lon=_fields["lon"],
+                nm_remaining=_fields["nm_remaining"],
+                language=_fields["language"],
+                extra_context=_extra,
             ),
         )
 
@@ -1308,12 +1350,12 @@ async def agent_meteo(req: AgentRequest):
 
         if not has_content:
             fallback = (
-                f"## {req.to_stop} — Weather Briefing\n\n"
+                f"## {_fields['to_stop']} — Weather Briefing\n\n"
                 f"⚠️ **LLM service temporarily unavailable.**\n\n"
                 f"**Recommended resources:**\n"
                 f"- 🌐 [Windy](https://www.windy.com) — real-time weather\n"
                 f"- 📡 NavTex / SSB weatherfax\n\n"
-                f"Distance remaining: **{req.nm_remaining:.0f} nm**."
+                f"Distance remaining: **{_fields['nm_remaining']:.0f} nm**."
             )
             yield f"data: {json.dumps({'token': fallback})}\n\n"
 
@@ -1334,15 +1376,18 @@ async def agent_pirate(req: AgentRequest):
         from agents.deploy_ai import stream_llm
 
         # Build prompt — includes Noonsite RSS fetch (sync, in threadpool)
+        _fields = req.resolved_fields()
+        _extra  = req.extra_context()
         prompt = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: get_streaming_prompt(
-                from_stop=req.from_stop,
-                to_stop=req.to_stop,
-                lat=req.lat,
-                lon=req.lon,
-                nm_remaining=req.nm_remaining,
-                language=req.language,
+                from_stop=_fields["from_stop"],
+                to_stop=_fields["to_stop"],
+                lat=_fields["lat"],
+                lon=_fields["lon"],
+                nm_remaining=_fields["nm_remaining"],
+                language=_fields["language"],
+                extra_context=_extra,
             ),
         )
 
@@ -1357,12 +1402,12 @@ async def agent_pirate(req: AgentRequest):
 
         if not has_content:
             fallback = (
-                f"## {req.to_stop} — Community Intelligence\n\n"
+                f"## {_fields['to_stop']} — Community Intelligence\n\n"
                 f"⚠️ **LLM service temporarily unavailable.**\n\n"
                 f"**Recommended resources:**\n"
                 f"- 🌐 [Noonsite Forums](https://www.noonsite.com)\n"
                 f"- 🌐 [Cruisers Forum](https://www.cruisersforum.com)\n\n"
-                f"Distance remaining: **{req.nm_remaining:.0f} nm**."
+                f"Distance remaining: **{_fields['nm_remaining']:.0f} nm**."
             )
             yield f"data: {json.dumps({'token': fallback})}\n\n"
 
