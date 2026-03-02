@@ -1574,7 +1574,8 @@ export default function App() {
                 {/* L'origine SVG (0,0) est positionnée au centre-bas du        */}
                 {/* drapeau (anchor="bottom"), qui est aussi le point décalé.   */}
                 {/* Le point géographique réel est à (-offsetX, -offsetY).      */}
-                {(Math.abs(markerOffsets[i][0]) > 1 || Math.abs(markerOffsets[i][1]) > 1) && (
+                {(markerOffsets[i]?.[0] || markerOffsets[i]?.[1]) &&
+                 (Math.abs(markerOffsets[i][0]) > 1 || Math.abs(markerOffsets[i][1]) > 1) && (
                   <svg
                     style={{
                       position: "absolute",
