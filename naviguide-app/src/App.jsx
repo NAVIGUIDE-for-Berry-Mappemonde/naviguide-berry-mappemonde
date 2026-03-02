@@ -1589,23 +1589,34 @@ export default function App() {
                       display: "block",
                     }}
                   >
-                    {/* Trait pointillé drapeau → escale */}
+                    {/* Ombre sombre sous le trait (donne du contraste sur tout fond) */}
                     <line
-                      x1={0}  y1={0}
+                      x1={0} y1={0}
                       x2={-markerOffsets[i][0]}
                       y2={-markerOffsets[i][1]}
-                      stroke="rgba(255,255,255,0.75)"
-                      strokeWidth={1.5}
+                      stroke="rgba(0,0,0,0.55)"
+                      strokeWidth={3.5}
                       strokeDasharray="4 3"
+                      strokeLinecap="round"
                     />
-                    {/* Petit cercle sur le point géographique */}
+                    {/* Trait blanc pointillé visible */}
+                    <line
+                      x1={0} y1={0}
+                      x2={-markerOffsets[i][0]}
+                      y2={-markerOffsets[i][1]}
+                      stroke="rgba(255,255,255,0.95)"
+                      strokeWidth={1.8}
+                      strokeDasharray="4 3"
+                      strokeLinecap="round"
+                    />
+                    {/* Cercle d'ancrage sur le point géographique réel */}
                     <circle
                       cx={-markerOffsets[i][0]}
                       cy={-markerOffsets[i][1]}
-                      r={3}
-                      fill="rgba(255,255,255,0.9)"
-                      stroke="rgba(0,0,0,0.4)"
-                      strokeWidth={0.8}
+                      r={4}
+                      fill="white"
+                      stroke="rgba(0,0,0,0.6)"
+                      strokeWidth={1.2}
                     />
                   </svg>
                 )}
