@@ -2,11 +2,14 @@
  * useMarkerOffsets
  * Calcule des décalages pixel pour éviter le chevauchement des markers MapLibre.
  *
- * Algorithme :
+ * Algorithme (itératif, convergence garantie) :
  *  1. Projette chaque point en coordonnées écran via map.project()
- *  2. Pour chaque paire de points dont la distance < THRESHOLD px,
- *     calcule un vecteur de répulsion et accumule l'offset
- *  3. Recompute à chaque fin de zoom ou de déplacement (debounced)
+ *  2. Itère jusqu'à MAX_ITERATIONS en appliquant des vecteurs de répulsion
+ *     calculés sur les positions ACCUMULÉES (pas juste les positions de base).
+ *     Cela garantit que même 3+ markers groupés convergent vers une position
+ *     sans chevauchement.
+ *  3. Stoppe dès que la plus grande correction d'une itération < MIN_PUSH px.
+ *  4. Recompute à chaque fin de zoom ou de déplacement (debounced).
  *
  * Usage :
  *   const offsets = useMarkerOffsets(points, mapRef);
@@ -16,7 +19,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 
-const OVERLAP_THRESHOLD = 52; // px — distance min souhaitée entre centres
+// Drapeaux : 36×26 px → diagonale ~44 px. On prend 56 px pour avoir une marge
+// confortable même quand deux drapeaux se touchent par un coin.
+const OVERLAP_THRESHOLD = 56; // px — séparation minimale entre centres
+const MAX_ITERATIONS    = 20; // itérations max de l'algorithme de répulsion
+const MIN_PUSH          = 0.4; // px — arrêt anticipé si toutes corrections < seuil
 const DEBOUNCE_MS       = 120;
 
 export function useMarkerOffsets(points, mapRef) {
@@ -27,32 +34,49 @@ export function useMarkerOffsets(points, mapRef) {
     const map = mapRef.current?.getMap();
     if (!map || !points.length) return;
 
-    // ── 1. Projection en pixels écran ────────────────────────────────────────
-    const px = points.map((p) => {
+    // ── 1. Projection en pixels écran (positions de base, sans offset) ────────
+    const base = points.map((p) => {
       const pt = map.project([p.lon, p.lat]);
-      return { x: pt.x, y: pt.y };
+      return [pt.x, pt.y];
     });
 
-    // ── 2. Accumulation des vecteurs de répulsion ─────────────────────────────
+    // ── 2. Algorithme de répulsion itératif ───────────────────────────────────
+    // result[i] = offset accumulé du marker i (commence à [0, 0])
     const result = points.map(() => [0, 0]);
 
-    for (let i = 0; i < points.length; i++) {
-      for (let j = i + 1; j < points.length; j++) {
-        const dx   = px[j].x - px[i].x;
-        const dy   = px[j].y - px[i].y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+    for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+      let maxPush = 0; // amplitude max de cette itération
 
-        if (dist < OVERLAP_THRESHOLD && dist > 0.5) {
-          // Amplitude du décalage : moitié de la pénétration + marge de 3px
-          const push = (OVERLAP_THRESHOLD - dist) / 2 + 3;
-          const nx = dx / dist;
-          const ny = dy / dist;
-          result[i][0] -= nx * push;
-          result[i][1] -= ny * push;
-          result[j][0] += nx * push;
-          result[j][1] += ny * push;
+      for (let i = 0; i < points.length; i++) {
+        for (let j = i + 1; j < points.length; j++) {
+          // Position courante (base + offset accumulé)
+          const ax = base[i][0] + result[i][0];
+          const ay = base[i][1] + result[i][1];
+          const bx = base[j][0] + result[j][0];
+          const by = base[j][1] + result[j][1];
+
+          const dx   = bx - ax;
+          const dy   = by - ay;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < OVERLAP_THRESHOLD && dist > 0.5) {
+            // Chaque marker reçoit la moitié de la pénétration + marge
+            const push = (OVERLAP_THRESHOLD - dist) / 2 + 2;
+            const nx = dx / dist;
+            const ny = dy / dist;
+
+            result[i][0] -= nx * push;
+            result[i][1] -= ny * push;
+            result[j][0] += nx * push;
+            result[j][1] += ny * push;
+
+            if (push > maxPush) maxPush = push;
+          }
         }
       }
+
+      // Convergence atteinte : aucune paire ne se chevauchait significativement
+      if (maxPush < MIN_PUSH) break;
     }
 
     setOffsets(result);

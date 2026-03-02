@@ -649,9 +649,11 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
                     : "bg-slate-800/40 text-white/50 border-white/8 hover:text-white/80 hover:bg-slate-700/50",
               ].join(" ")}
             >
-              {simulationMode
-                ? <><Square size={9} className="fill-current" /><span>{t("exitSimulationShort")}</span></>
-                : <><Play  size={9} className="fill-current" /><span>{t("simulationModeLabel")}</span></>
+              {!routeLoaded
+                ? <><Loader2 size={9} className="animate-spin flex-shrink-0" /><span>{t("routeLoadingLabel")}</span></>
+                : simulationMode
+                  ? <><Square size={9} className="fill-current" /><span>{t("exitSimulationShort")}</span></>
+                  : <><Play   size={9} className="fill-current" /><span>{t("simulationModeLabel")}</span></>
               }
             </button>
           )}

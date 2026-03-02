@@ -139,6 +139,7 @@ export default {
   simulationModeLabel:   "Simulation Mode",
   exitSimulationShort:   "Exit simulation",
   simulationModeTooltip: "Simulation Mode — drag the catamaran along the route",
+  routeLoadingLabel:     "Wait for full route loading",
   routeLoadingTooltip:   "Loading route, please wait…",
 
   // ── Nav buttons (SimulationPanel) ─────────────────────────────────────────

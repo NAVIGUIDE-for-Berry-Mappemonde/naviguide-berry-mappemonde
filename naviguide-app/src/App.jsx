@@ -1569,6 +1569,45 @@ export default function App() {
                 onMouseLeave={() => setHoveredPoint(null)}
                 style={{ position: "relative", cursor: "default" }}
               >
+                {/* ── Trait pointillé vers le point géographique réel ─────── */}
+                {/* Seulement quand le drapeau a été déplacé (offset non nul).  */}
+                {/* L'origine SVG (0,0) est positionnée au centre-bas du        */}
+                {/* drapeau (anchor="bottom"), qui est aussi le point décalé.   */}
+                {/* Le point géographique réel est à (-offsetX, -offsetY).      */}
+                {(Math.abs(markerOffsets[i][0]) > 1 || Math.abs(markerOffsets[i][1]) > 1) && (
+                  <svg
+                    style={{
+                      position: "absolute",
+                      bottom: 0,
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      width: 0,
+                      height: 0,
+                      overflow: "visible",
+                      pointerEvents: "none",
+                      zIndex: -1,
+                    }}
+                  >
+                    {/* Trait pointillé drapeau → escale */}
+                    <line
+                      x1={0}  y1={0}
+                      x2={-markerOffsets[i][0]}
+                      y2={-markerOffsets[i][1]}
+                      stroke="rgba(255,255,255,0.55)"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                    />
+                    {/* Petit cercle sur le point géographique */}
+                    <circle
+                      cx={-markerOffsets[i][0]}
+                      cy={-markerOffsets[i][1]}
+                      r={3}
+                      fill="rgba(255,255,255,0.85)"
+                      stroke="rgba(0,0,0,0.3)"
+                      strokeWidth={0.8}
+                    />
+                  </svg>
+                )}
                 <img
                   src={p.flag}
                   alt={p.name}
