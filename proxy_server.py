@@ -118,6 +118,10 @@ async def proxy_wave(request: Request):
 async def proxy_current(request: Request):
     return await proxy_request(request, API_BACKEND, "current")
 
+@app.api_route("/agents/{path:path}", methods=["GET", "POST"])
+async def proxy_agents(request: Request, path: str):
+    return await proxy_request(request, API_BACKEND, f"agents/{path}")
+
 # ── Maritime data proxy routes (ZEE, WPI Ports) → naviguide-api ─────────────
 @app.api_route("/proxy/{path:path}", methods=["GET", "POST"])
 async def proxy_maritime(request: Request, path: str):
