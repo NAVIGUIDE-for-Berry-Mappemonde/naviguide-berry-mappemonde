@@ -21,6 +21,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from typing_extensions import TypedDict
 
 from .deploy_ai import call_llm
+from .context_block import build_extra_context_block
 
 # IMB Live Piracy & Armed Robbery Report (public JSON feed)
 _IMB_FEED_URL = "https://www.icc-ccs.org/index.php/piracy-reporting-centre/live-piracy-map/details/json"
@@ -235,6 +236,7 @@ def get_streaming_prompt(
     lon:          float,
     nm_remaining: float,
     language:     str = "fr",
+    extra_context: dict = None,
 ) -> str:
     """
     Run the data-fetch pipeline and return the built LLM prompt without calling the LLM.
@@ -258,4 +260,6 @@ def get_streaming_prompt(
     }
     state = prepare_context_node(initial)
     state = fetch_piracy_data_node(state)
-    return _build_guard_prompt(state)
+    base_prompt = _build_guard_prompt(state)
+    # TASK-017/018: Append enriched simulation context when available
+    return base_prompt + build_extra_context_block(extra_context)

@@ -20,6 +20,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from typing_extensions import TypedDict
 
 from .deploy_ai import call_llm
+from .context_block import build_extra_context_block
 
 
 # ── State ──────────────────────────────────────────────────────────────────────
@@ -170,6 +171,7 @@ def get_streaming_prompt(
     lon:          float,
     nm_remaining: float,
     language:     str = "fr",
+    extra_context: dict = None,
 ) -> str:
     """
     Build and return the LLM prompt for the Custom agent without calling the LLM.
@@ -191,4 +193,6 @@ def get_streaming_prompt(
         "data_freshness": "training_only",
         "error":        None,
     })
-    return state.get("prompt", "")
+    base_prompt = state.get("prompt", "")
+    # TASK-017/018: Append enriched simulation context when available
+    return base_prompt + build_extra_context_block(extra_context)
