@@ -520,7 +520,7 @@ function BerryCard({ onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart
 
 /* ── Main component ───────────────────────────────────────────────────────── */
 
-export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart, onDrawFinish, isCockpit, isOffshore, polarData, maritimeLayers, simulationMode, onSimulationToggle, legContext, onNext, canNext, onPrev, canPrev }) {
+export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart, onDrawFinish, isCockpit, isOffshore, polarData, maritimeLayers, routeLoaded, simulationMode, onSimulationToggle, legContext, onNext, canNext, onPrev, canPrev }) {
   const { t } = useLang();
   const stats    = plan?.voyage_statistics || {};
   const alerts   = plan?.critical_alerts   || [];
@@ -630,14 +630,23 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
           {/* ── Bouton Mode Simulation ─────────────────────────────────────── */}
           {onSimulationToggle && (
             <button
-              onClick={onSimulationToggle}
-              title={simulationMode ? t("exitSimulation") : t("simulationModeTooltip")}
+              onClick={routeLoaded ? onSimulationToggle : undefined}
+              disabled={!routeLoaded}
+              title={
+                !routeLoaded
+                  ? t("routeLoadingTooltip")
+                  : simulationMode
+                    ? t("exitSimulation")
+                    : t("simulationModeTooltip")
+              }
               className={[
                 "flex items-center justify-center gap-1.5 w-full mt-2 px-2 py-1.5 rounded-lg",
                 "text-[10px] font-semibold transition-all duration-150 select-none border",
-                simulationMode
-                  ? "bg-blue-600/80 text-white border-blue-500/60 shadow-lg shadow-blue-900/30"
-                  : "bg-slate-800/40 text-white/50 border-white/8 hover:text-white/80 hover:bg-slate-700/50",
+                !routeLoaded
+                  ? "bg-slate-800/20 text-white/25 border-white/5 cursor-not-allowed"
+                  : simulationMode
+                    ? "bg-blue-600/80 text-white border-blue-500/60 shadow-lg shadow-blue-900/30"
+                    : "bg-slate-800/40 text-white/50 border-white/8 hover:text-white/80 hover:bg-slate-700/50",
               ].join(" ")}
             >
               {simulationMode

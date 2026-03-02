@@ -42,7 +42,7 @@ function setCachedPlan(lang, data) {
   try { localStorage.setItem(planCacheKey(lang), JSON.stringify({ data, ts: Date.now() })); } catch {}
 }
 
-const SEGMENT_BATCH_SIZE = 4; // legs fetched in parallel per batch
+const SEGMENT_BATCH_SIZE = 1; // legs fetched one at a time, in strict route order
 
 export default function App() {
   const { lang, t } = useLang();
@@ -79,6 +79,9 @@ export default function App() {
 
   // ── Maritime data layers (ZEE, WPI Ports, SHOM Balisage) ────────────────────
   const maritimeLayers = useMaritimeLayers();
+
+  // True only once every segment has been fetched (all batches done)
+  const routeFullyLoaded = segProgress.total > 0 && segProgress.done >= segProgress.total;
 
   // ── Simulation mode — catamaran draggable ────────────────────────────────────
   const [simulationMode, setSimulationMode] = useState(false);
@@ -489,11 +492,14 @@ export default function App() {
       to: byName("Cayenne (Guyane)"),
     });
 
-    // Insert Halifax → Saint-Pierre right after the leg that arrives at Halifax.
-    const halifaxIdx = legs.findIndex((l) => l.to.name === "Halifax (Nouvelle-Écosse)");
-    legs.splice(halifaxIdx + 1, 0, {
+    // Insert Halifax → Saint-Pierre AFTER the leg that arrives at Cayenne.
+    // This keeps the segment decoupled from the main route chain and ensures
+    // it is built (batch-1) and played in simulation only after Cayenne.
+    const cayenneIdx = legs.findIndex((l) => l.to.name === "Cayenne (Guyane)");
+    legs.splice(cayenneIdx + 1, 0, {
       from: byName("Halifax (Nouvelle-Écosse)"),
-      to: byName("Saint-Pierre (Saint-Pierre-et-Miquelon)"),
+      to:   byName("Saint-Pierre (Saint-Pierre-et-Miquelon)"),
+      decoupled: true,  // mark as a side branch (not fused into main polyline)
     });
 
     // ── Segment direction guard ──────────────────────────────────────────────
@@ -723,6 +729,7 @@ export default function App() {
         isOffshore={isOffshore}
         polarData={polarData}
         maritimeLayers={maritimeLayers}
+        routeLoaded={routeFullyLoaded}
         simulationMode={simulationMode}
         onSimulationToggle={() => {
           const entering = !simulationMode;
