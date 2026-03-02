@@ -19,7 +19,23 @@ if [ -f "$ENV_FILE" ]; then
   set -a && source "$ENV_FILE" && set +a
 fi
 
+# Kill any stale processes holding the managed ports (nohup leftovers, etc.)
+# so supervisor can always bind cleanly on startup / restart
+for PORT in 8001 8004 3016; do
+  PIDS=$(lsof -ti tcp:$PORT 2>/dev/null)
+  if [ -n "$PIDS" ]; then
+    echo "[start-naviguide] Freeing port $PORT (PIDs: $PIDS)"
+    kill -9 $PIDS 2>/dev/null || true
+  fi
+done
+sleep 1
+
 # Only start if not already running
 if [ ! -f "$PID_FILE" ] || ! kill -0 "$(cat $PID_FILE)" 2>/dev/null; then
   $SUPERVISORD -c "$CONF"
+else
+  # Supervisord already running — just reload config + restart programs
+  /home/cocoapp/.local/bin/supervisorctl -c "$CONF" reread   2>/dev/null || true
+  /home/cocoapp/.local/bin/supervisorctl -c "$CONF" update   2>/dev/null || true
+  /home/cocoapp/.local/bin/supervisorctl -c "$CONF" restart all 2>/dev/null || true
 fi
