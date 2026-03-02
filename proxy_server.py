@@ -4,10 +4,12 @@ Serves the React frontend as static files and proxies API calls
 to the backend services running internally.
 
 Routes proxied:
-  GET  /route              → naviguide-api     :8000
-  POST /wind               → naviguide-api     :8000
-  POST /wave               → naviguide-api     :8000
-  POST /current            → naviguide-api     :8000
+  GET  /route              → naviguide-api     :8001
+  POST /wind               → naviguide-api     :8001
+  POST /wave               → naviguide-api     :8001
+  POST /current            → naviguide-api     :8001
+  GET  /proxy/zee          → naviguide-api     :8001
+  GET  /proxy/ports        → naviguide-api     :8001
   *    /api/v1/polar/*     → polar-api         :8004
   *    /api/v1/routing/*   → weather-routing   :3010
   *    /api/v1/*           → naviguide-orch    :3008
@@ -115,6 +117,11 @@ async def proxy_wave(request: Request):
 @app.api_route("/current", methods=["GET", "POST"])
 async def proxy_current(request: Request):
     return await proxy_request(request, API_BACKEND, "current")
+
+# ── Maritime data proxy routes (ZEE, WPI Ports) → naviguide-api ─────────────
+@app.api_route("/proxy/{path:path}", methods=["GET", "POST"])
+async def proxy_maritime(request: Request, path: str):
+    return await proxy_request(request, API_BACKEND, f"proxy/{path}")
 
 # ── Polar API routes (must be before general /api/v1/*) ──────────────────────
 @app.api_route("/api/v1/polar/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
