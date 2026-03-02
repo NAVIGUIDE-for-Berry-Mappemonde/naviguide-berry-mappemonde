@@ -1582,11 +1582,11 @@ export default function App() {
                       bottom: 0,
                       left: "50%",
                       transform: "translateX(-50%)",
-                      width: 0,
-                      height: 0,
+                      width: 1,
+                      height: 1,
                       overflow: "visible",
                       pointerEvents: "none",
-                      zIndex: -1,
+                      display: "block",
                     }}
                   >
                     {/* Trait pointillé drapeau → escale */}
@@ -1594,7 +1594,7 @@ export default function App() {
                       x1={0}  y1={0}
                       x2={-markerOffsets[i][0]}
                       y2={-markerOffsets[i][1]}
-                      stroke="rgba(255,255,255,0.55)"
+                      stroke="rgba(255,255,255,0.75)"
                       strokeWidth={1.5}
                       strokeDasharray="4 3"
                     />
@@ -1603,8 +1603,8 @@ export default function App() {
                       cx={-markerOffsets[i][0]}
                       cy={-markerOffsets[i][1]}
                       r={3}
-                      fill="rgba(255,255,255,0.85)"
-                      stroke="rgba(0,0,0,0.3)"
+                      fill="rgba(255,255,255,0.9)"
+                      stroke="rgba(0,0,0,0.4)"
                       strokeWidth={0.8}
                     />
                   </svg>
