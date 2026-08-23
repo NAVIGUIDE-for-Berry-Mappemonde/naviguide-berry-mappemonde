@@ -31,6 +31,7 @@ export function MapPopup({
   onClose,
   maxWidth = 400,
   children,
+  "data-testid": dataTestId,
 }) {
   return (
     <Popup
@@ -46,6 +47,7 @@ export function MapPopup({
       <div
         className="bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden"
         style={{ minWidth: 280, maxWidth: maxWidth }}
+        data-testid={dataTestId}
       >
         {accentColor && (
           <div

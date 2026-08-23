@@ -39,7 +39,10 @@ function PolarChatSection({ polarData }) {
   const textareaRef = useRef(null);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // `block: "nearest"` prevents scrollIntoView from bubbling up to the
+    // outer sidebar container (which would visually push the whole chat
+    // out of view right after sending a message).
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages]);
 
   // Auto-resize textarea as content grows/shrinks
@@ -90,8 +93,12 @@ function PolarChatSection({ polarData }) {
       </div>
 
       {/* Messages */}
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-        <div className="max-h-48 overflow-y-auto sidebar-scroll px-3 py-3 space-y-0.5">
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden flex flex-col" data-testid="polar-chat-panel">
+        <div
+          className="overflow-y-auto sidebar-scroll px-3 py-3 space-y-0.5"
+          style={{ minHeight: 96, maxHeight: 224 }}
+          data-testid="polar-chat-messages"
+        >
           {messages.length === 0 && !polarData && (
             <p className="text-xs text-slate-500 text-center py-3">
               {t("polarChatLoadPrompt")}
@@ -109,7 +116,7 @@ function PolarChatSection({ polarData }) {
         </div>
 
         {/* Input */}
-        <div className="border-t border-slate-700/50 px-3 py-2 flex gap-2 items-end">
+        <div className="border-t border-slate-700/50 px-3 py-2 flex gap-2 items-end flex-shrink-0" data-testid="polar-chat-input-row">
           <textarea
             ref={textareaRef}
             value={chatInput}
@@ -118,6 +125,7 @@ function PolarChatSection({ polarData }) {
             placeholder={polarData ? t("polarChatAskPlaceholder") : t("polarChatLoadFirst")}
             disabled={!polarData}
             rows={1}
+            data-testid="polar-chat-input"
             className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 resize-none
               focus:outline-none leading-relaxed disabled:opacity-40 overflow-y-auto"
             style={{ maxHeight: "112px" }}
@@ -125,6 +133,7 @@ function PolarChatSection({ polarData }) {
           <button
             onClick={handleSend}
             disabled={!chatInput.trim() || chatLoading || !polarData}
+            data-testid="polar-chat-send-btn"
             className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all
               ${(!chatInput.trim() || chatLoading || !polarData)
                 ? "text-slate-600 cursor-not-allowed"
@@ -594,7 +603,7 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
             onDrawFinish={onDrawFinish}
           />
 
-          {/* ── Maritime layer toggles — grid 3×2 dans la sidebar ─────── */}
+          {/* ── Maritime layer toggles — grille 1×5 dans la sidebar ────── */}
           {maritimeLayers && (
             <MaritimeLayersPanel {...maritimeLayers} />
           )}
@@ -665,21 +674,6 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
             </div>
           </div>
         )}
-
-          {/*
-            ONBOARDING only: progressive "Getting Started" guide.
-            Hidden in Cockpit — the user already knows the app.
-          */}
-          {!isCockpit && !plan && (
-            <div className="rounded-xl border border-blue-700/30 bg-blue-950/20 p-3">
-              <div className="text-xs font-semibold text-blue-300 mb-1.5 flex items-center gap-1.5">
-                {t("gettingStarted")}
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                {t("gettingStartedText")}
-              </p>
-            </div>
-          )}
 
           {/* Polar Chat — always shown above briefing */}
           <PolarChatSection polarData={polarData} />

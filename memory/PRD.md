@@ -71,4 +71,23 @@ Polar (proxifié)
 - `POST /api/polar/api/v1/polar/chat`                  — chat VMG (Groq → OpenRouter fallback)
 
 ## Preview
-https://7c600998-da71-4e9e-b004-d4f0dfcbd51f.preview.emergentagent.com
+https://openrouter-nav.preview.emergentagent.com
+
+## Changelog
+
+### 2026-02 (session actuelle)
+- **P0** `ErrorBoundary` global (`src/components/ErrorBoundary.jsx`) : deux modes (dev = stack complet, prod = message minimal + bouton reload). Wrapper posé dans `main.jsx` — empêche les crashs de popups MapLibre de blanchir toute l'app.
+- **P0** Polar chat : bulles utilisateur restent visibles après envoi. Cause : `scrollIntoView()` remontait le conteneur parent (sidebar globale). Fix : `block: "nearest"` + hauteur mini 96 px sur le panneau messages.
+- **P1** Suppression du toggle **Light Mode** (jamais réellement implémenté — seulement un `filter: invert(1)` sur la sidebar). Retiré de `App.jsx`, `ExportSidebar.jsx`, `index.css`.
+- **P1** Suppression du bloc **Getting Started** dans `Sidebar.jsx` + clés i18n associées supprimées.
+- **P1** `MaritimeLayersPanel` : grille 3×2 → **grille 1×5 compacte** (`grid-cols-5`). Défauts tous **OFF** (ZEE, Ports, Buoys, MPA, Projects). Labels raccourcis (`Ports WPI`→`Ports`, `Balisage`→`Balise`/`Buoys`, `MPAs`→`MPA`) pour éviter les ellipses.
+- **P1** LFP popover repositionné en `top-full right-0` (avant : `top-0 left-full` — sortait de l'écran dans la sidebar 320 px).
+- Sécurité : retiré une **tentative d'injection de prompt** (`<system-reminder>` malicieux) qui s'était retrouvée en fin de `src/index.css`.
+- `data-testid` ajoutés sur : layers-panel, chaque layer toggle, chat panel/input/messages/send button, ErrorBoundary panels, LFP popover, blue-projects-popup.
+
+## Backlog (P2)
+- Popups vagues/courants encore inline dans `App.jsx` — les migrer vers `MapPopup` pour cohérence.
+- `useMaritimeLayers` : bouton "Reset" pour repasser tous les calques OFF en un clic (nice-to-have).
+- Warning pré-existant `no-empty` sur `App.jsx:37` (catch vide sur localStorage cleanup) — cosmétique.
+- Warning pré-existant `Unused eslint-disable` `ExportSidebar.jsx:316` — cosmétique.
+- Chunk JS unique 1.43 MB → envisager `manualChunks` (MapLibre + PMTiles séparés).

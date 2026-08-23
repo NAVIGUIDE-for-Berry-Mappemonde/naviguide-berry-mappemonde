@@ -101,7 +101,6 @@ export default function App() {
   // ── App-wide modes ──────────────────────────────────────────────────────────
   const [isOffshore,  setIsOffshore]  = useState(true);  // always Offshore (toggles removed)
   const [isCockpit,   setIsCockpit]   = useState(false); // always Onboarding (toggles removed)
-  const [isLightMode, setIsLightMode] = useState(false); // false=Dark, true=Light
 
   // ── Maritime data layers (ZEE, WPI Ports, SHOM Balisage, MPAs, Projects) ────
   const maritimeLayers = useMaritimeLayers();
@@ -743,7 +742,7 @@ export default function App() {
   return (
     <div
       style={{ height: "100vh", width: "100vw", position: "relative" }}
-      className={[isLightMode ? "light-mode" : "", isOffshore ? "offshore-mode" : ""].filter(Boolean).join(" ")}
+      className={isOffshore ? "offshore-mode" : ""}
     >
       <Sidebar
         plan={expeditionPlan}
@@ -783,10 +782,8 @@ export default function App() {
         onToggle={() => setExportSidebarOpen((o) => !o)}
         isOffshore={isOffshore}
         isCockpit={isCockpit}
-        isLightMode={isLightMode}
         onOffshoreChange={setIsOffshore}
         onCockpitChange={setIsCockpit}
-        onLightModeChange={setIsLightMode}
         polarData={polarData}
         onPolarDataLoaded={setPolarData}
       />

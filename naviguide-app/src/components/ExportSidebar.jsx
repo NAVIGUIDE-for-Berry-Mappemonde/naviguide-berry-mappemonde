@@ -294,8 +294,8 @@ function ExportButton({ icon, label, onClick, color }) {
 export function ExportSidebar({
   segments, points, open, onToggle,
   // Mode props (state lives in App.jsx)
-  isOffshore, isCockpit, isLightMode,
-  onOffshoreChange, onCockpitChange, onLightModeChange,
+  isOffshore, isCockpit,
+  onOffshoreChange, onCockpitChange,
   // Polar props (state lives in App.jsx)
   polarData, onPolarDataLoaded,
 }) {
@@ -458,19 +458,6 @@ export function ExportSidebar({
               </button>
             </div>
           </div>
-        </div>
-
-        {/* ── Mode Toggles ───────────────────────────────────────────────── */}
-        <div className="px-4 pb-3 border-b border-slate-700/60 space-y-3">
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            {t("modes")}
-          </div>
-          <Toggle
-            labelLeft={t("dark")}
-            labelRight={t("light")}
-            active={isLightMode}
-            onChange={onLightModeChange}
-          />
         </div>
 
         {/* ── Route statistics ─────────────────────────────────────────────── */}

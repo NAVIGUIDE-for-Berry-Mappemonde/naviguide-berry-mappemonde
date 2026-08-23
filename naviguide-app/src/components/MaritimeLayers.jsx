@@ -58,13 +58,13 @@ async function fetchPorts() {
  * useMaritimeLayers
  * All layer toggles + data fetching for the 5 map layers.
  *
- * Defaults:
- *   ZEE=on, Ports=on, Buoyage=on, MPAs=off, Projects=off, lfpFilter=null (all)
+ * Defaults: ALL layers OFF at startup — user opts in explicitly so the
+ * initial map stays clean and legible.
  */
 export function useMaritimeLayers() {
-  const [showZee,      setShowZee]      = useState(true);
-  const [showPorts,    setShowPorts]    = useState(true);
-  const [showBalisage, setShowBalisage] = useState(true);
+  const [showZee,      setShowZee]      = useState(false);
+  const [showPorts,    setShowPorts]    = useState(false);
+  const [showBalisage, setShowBalisage] = useState(false);
   const [showMpas,     setShowMpas]     = useState(false);
   const [showProjects, setShowProjects] = useState(false);
 
@@ -225,7 +225,8 @@ function LfpPopover({ lfpFilter, setLfpFilter, onClose, t }) {
       ref={rootRef}
       role="dialog"
       aria-label={t("ampLfpLegend")}
-      className="absolute top-0 left-full ml-2 min-w-[180px] max-w-[calc(100vw-320px)] z-30
+      data-testid="lfp-popover"
+      className="absolute top-full right-0 mt-1.5 min-w-[180px] z-30
                  bg-slate-900/95 backdrop-blur-md border border-white/15
                  rounded-xl shadow-2xl px-3 py-2.5"
     >
@@ -269,19 +270,15 @@ export function MaritimeLayersPanel(props) {
   const { t } = useLang();
   const [lfpOpen, setLfpOpen] = useState(false);
 
-  // Split layers into 2 rows: 3 on top, 2 below (MPAs on bottom-left keeps
-  // its chevron for LFP filter). Widths are 3-col grid; MPAs is 1 col, but
-  // its chevron sits INSIDE the same button cell → we let the cell size
-  // adapt via flex.
-  const rowTop    = LAYER_CONFIG.slice(0, 3);
-  const rowBottom = LAYER_CONFIG.slice(3);   // MPAs + Projects
-
+  // Single row — 5 compact pills side by side.
+  // No colour dot: label + optional chevron only, tight padding, tiny font.
   return (
     <div
-      className="grid grid-cols-3 gap-1.5 mt-2.5"
+      className="grid grid-cols-5 gap-1 mt-2.5"
       style={{ pointerEvents: "auto" }}
+      data-testid="maritime-layers-panel"
     >
-      {rowTop.map((cfg) => (
+      {LAYER_CONFIG.map((cfg) => (
         <PillCell
           key={cfg.key}
           cfg={cfg}
@@ -291,67 +288,44 @@ export function MaritimeLayersPanel(props) {
           t={t}
         />
       ))}
-      {/* Row 2: MPAs (1 col) + Projects (2 cols wide) */}
-      {rowBottom.map((cfg, i) => (
-        <div
-          key={cfg.key}
-          className={i === rowBottom.length - 1 ? "col-span-2" : ""}
-        >
-          <PillCell
-            cfg={cfg}
-            props={props}
-            lfpOpen={lfpOpen}
-            setLfpOpen={setLfpOpen}
-            t={t}
-            fullWidth
-          />
-        </div>
-      ))}
     </div>
   );
 }
 
 /**
  * PillCell — one toggle pill (+ optional chevron popover).
- * `fullWidth` stretches the pill to fill its grid cell.
+ * Rendered edge-to-edge inside its grid cell (no `fullWidth` prop needed —
+ * the 5-column layout guarantees uniform widths).
  */
-function PillCell({ cfg, props, lfpOpen, setLfpOpen, t, fullWidth = false }) {
-  const { key, labelKey, titleKey, color, showKey, toggleKey, loadingKey, errorKey, hasPopover } = cfg;
+function PillCell({ cfg, props, lfpOpen, setLfpOpen, t }) {
+  const { key, labelKey, titleKey, showKey, toggleKey, loadingKey, errorKey, hasPopover } = cfg;
   const active  = props[showKey];
   const loading = props[loadingKey];
   const error   = props[errorKey];
   const isMpas  = key === "mpas";
-  const widthCls = fullWidth ? "w-full" : "";
 
   return (
-    <div className="relative flex items-center">
+    <div className="relative flex items-center min-w-0">
       <button
         onClick={() => props[toggleKey]((v) => !v)}
         title={t(titleKey)}
+        data-testid={`layer-toggle-${key}`}
         className={[
-          "flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-semibold",
-          "transition-all duration-150 select-none",
-          hasPopover ? "rounded-l-full flex-1" : `rounded-full ${widthCls}`,
+          "flex items-center justify-center px-1.5 py-1 text-[10px] font-semibold",
+          "transition-all duration-150 select-none truncate min-w-0",
+          hasPopover ? "rounded-l-full flex-1" : "rounded-full w-full",
           active
             ? "bg-slate-700/90 text-white border border-white/20"
             : "bg-transparent text-white/45 border border-white/10 hover:text-white/80 hover:bg-slate-700/50",
           error ? "border-red-500/50" : "",
         ].join(" ")}
       >
-        {loading ? (
-          <div className="w-1.5 h-1.5 rounded-full border-2 border-white/30 border-t-white animate-spin flex-shrink-0" />
-        ) : (
-          <div
-            className="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors"
-            style={{
-              backgroundColor: active ? color : "transparent",
-              border: `1.5px solid ${error ? "#ef4444" : color}`,
-            }}
-          />
+        {loading && (
+          <div className="w-1.5 h-1.5 mr-1 rounded-full border-2 border-white/30 border-t-white animate-spin flex-shrink-0" />
         )}
-        <span>{t(labelKey)}</span>
+        <span className="truncate">{t(labelKey)}</span>
         {error && !loading && (
-          <span className="text-red-400 text-[10px]" title={error}>⚠</span>
+          <span className="ml-1 text-red-400 text-[10px]" title={error}>⚠</span>
         )}
       </button>
 
@@ -362,8 +336,9 @@ function PillCell({ cfg, props, lfpOpen, setLfpOpen, t, fullWidth = false }) {
             title={t("ampLfpLegend")}
             aria-expanded={lfpOpen}
             aria-haspopup="dialog"
+            data-testid={`layer-popover-toggle-${key}`}
             className={[
-              "flex items-center justify-center px-1.5 py-1 rounded-r-full text-[10px]",
+              "flex items-center justify-center px-1 py-1 rounded-r-full text-[9px]",
               "border-l-0 transition-all duration-150 select-none",
               active
                 ? "bg-slate-700/90 text-white border border-white/20"

@@ -145,7 +145,12 @@ export function BlueProjectsPopup({ feature, onClose }) {
   useEffect(() => { setImgError(false); }, [feature?.lng, feature?.lat]);
 
   if (!feature) return null;
-  const p = feature.properties || {};
+  // Defensive: MapLibre may return properties as undefined or as a JSON string
+  // (when features come from a clustered/vector source) — coerce to object.
+  let p = feature.properties ?? {};
+  if (typeof p === "string") {
+    try { p = JSON.parse(p); } catch { p = {}; }
+  }
   const showImage = p.image && !imgError;
 
   return (
@@ -156,6 +161,7 @@ export function BlueProjectsPopup({ feature, onClose }) {
       accentColor={PROJECTS_COLOR}
       onClose={onClose}
       maxWidth={360}
+      data-testid="blue-projects-popup"
     >
       {showImage && (
         <img
