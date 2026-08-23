@@ -57,16 +57,9 @@ def _call_openrouter(prompt: str, max_tokens: int = 1200, language: str = "fr"):
         "mistralai/mistral-7b-instruct:free",
     ]
 
-    try:
-        req_m = urllib.request.Request("https://openrouter.ai/api/v1/models")
-        with urllib.request.urlopen(req_m, timeout=5) as resp_m:
-            data = json.loads(resp_m.read().decode("utf-8"))
-            for m in data.get("data", []):
-                m_id = m.get("id", "")
-                if m_id.endswith(":free") and m_id not in models_to_try:
-                    models_to_try.insert(0, m_id)
-    except Exception as e:
-        print(f"⚠️ ORCHESTRATEUR: Impossible de lister les modèles: {e}")
+    # Deterministic cascade: pre-fetch of /v1/models disabled to avoid
+    # unpredictable model ordering (worst-case 6× 45s = 4.5 min per briefing).
+    print(f"🔧 ORCHESTRATEUR: cascade OpenRouter = {models_to_try}")
 
     # ── Language-aware system prompt ───────────────────────────────────────────
     if language == "en":

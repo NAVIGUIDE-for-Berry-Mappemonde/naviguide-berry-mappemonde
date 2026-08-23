@@ -51,7 +51,7 @@ _HOP_BY_HOP = {
 
 
 async def _proxy(request: Request, base_url: str, path: str) -> Response:
-    """Generic reverse-proxy handler with 60s timeout (LLM briefings)."""
+    """Generic reverse-proxy handler with 120s timeout (LLM briefings can take 60-90s)."""
     url = f"{base_url}/{path}"
     headers = {
         k: v for k, v in request.headers.items()
@@ -60,7 +60,7 @@ async def _proxy(request: Request, base_url: str, path: str) -> Response:
     body = await request.body()
     params = dict(request.query_params)
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.request(
                 method=request.method,
                 url=url,
@@ -152,6 +152,25 @@ app.add_middleware(
 def health():
     """Liveness probe for the wrapper (does not touch sub-services)."""
     return {"status": "ok", "service": "naviguide-backend-wrapper", "port": 8001}
+
+
+# ── Startup warmup — precharge searoute maritime graph + shapely trees ───────
+# Avoids the 15-40s "cold start" on the first /api/route batch.
+# Blocking: measured <5s total, safe for uvicorn startup.
+@app.on_event("startup")
+async def _warmup_searoute():
+    import time as _time
+    t = _time.monotonic()
+    try:
+        import searoute as _sr
+        # Two calls: first primes the graph, second confirms it's warm.
+        # Use maritime coords (La Rochelle vicinity → Bay of Biscay) so the
+        # graph pages we care about are loaded.
+        _sr.searoute([-1.5, 46.5], [-2.0, 47.0])
+        _sr.searoute([-5.0, 45.0], [-6.0, 46.0])
+        print(f"[startup] searoute graph warmed in {_time.monotonic()-t:.2f}s", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[startup] searoute warmup failed (non-fatal): {exc}", flush=True)
 
 
 # Mount the naviguide-api FastAPI app on /api

@@ -66,11 +66,12 @@ def _call_openrouter(prompt: str, max_tokens: int = 600):
         return None
 
     models_to_try = [
-        "nvidia/nemotron-nano-12b-v2-vl:free",
         "meta-llama/llama-3.1-8b-instruct:free",
         "google/gemma-2-9b-it:free",
-        "qwen/qwen-2.5-72b-instruct:free"
+        "qwen/qwen-2.5-72b-instruct:free",
+        "mistralai/mistral-7b-instruct:free",
     ]
+    print(f"🔧 AGENT3: cascade OpenRouter = {models_to_try}")
 
     messages = [
         {"role": "system", "content": "Tu es le Directeur d'Expédition NAVIGUIDE. Rédige un briefing hauturier complet, ultra-professionnel et direct en français. Ne montre AUCUNE réflexion interne ni texte en anglais."},
