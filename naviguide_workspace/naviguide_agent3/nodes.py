@@ -66,20 +66,24 @@ def _call_openrouter(prompt: str, max_tokens: int = 600):
         return None
 
     models_to_try = [
-        "meta-llama/llama-3.1-8b-instruct:free",
-        "google/gemma-2-9b-it:free",
-        "qwen/qwen-2.5-72b-instruct:free",
-        "mistralai/mistral-7b-instruct:free",
+        # Same 4 slugs as orchestrator — kept in sync.
+        "nvidia/nemotron-nano-12b-v2-vl:free",
+        "nvidia/nemotron-nano-9b-v2:free",
+        "google/gemma-4-31b-it:free",
+        "google/gemma-4-26b-a4b-it:free",
     ]
-    print(f"🔧 AGENT3: cascade OpenRouter = {models_to_try}")
+    print(f"🔧 AGENT3: cascade OpenRouter = {models_to_try[:3]} (hardcoded, timeout=20s)", flush=True)
 
     messages = [
         {"role": "system", "content": "Tu es le Directeur d'Expédition NAVIGUIDE. Rédige un briefing hauturier complet, ultra-professionnel et direct en français. Ne montre AUCUNE réflexion interne ni texte en anglais."},
         {"role": "user", "content": prompt}
     ]
 
-    for model in models_to_try:
+    def _try_model(model: str, wave_label: str):
+        """Attempt one model. Returns content str on success, None on failure."""
+        import socket
         try:
+            print(f"[llm-a3] {wave_label}: trying {model}", flush=True)
             req = urllib.request.Request(
                 "https://openrouter.ai/api/v1/chat/completions",
                 data=json.dumps({
@@ -94,20 +98,73 @@ def _call_openrouter(prompt: str, max_tokens: int = 600):
                     "HTTP-Referer": "http://localhost:5173"
                 }
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=20) as resp:
                 res = json.loads(resp.read().decode("utf-8"))
                 if "choices" in res and len(res["choices"]) > 0:
                     content = res["choices"][0]["message"].get("content") or ""
                     lines_clean = [l for l in content.splitlines() if "thinking process" not in l.lower()]
                     content = "\n".join(lines_clean).strip()
                     if content:
-                        print(f"✅ AGENT3: Briefing généré en direct via {model} !")
+                        print(f"[llm-a3] {wave_label}: ✅ {model} succeeded", flush=True)
                         return content
+                return None
+        except urllib.error.HTTPError as he:
+            err_body = ""
+            try:
+                err_body = he.read().decode("utf-8", errors="ignore")[:200]
+            except Exception:
+                pass
+            if he.code == 404:
+                print(f"[llm-a3] {wave_label}: ❌ {model} removed from free tier (404) — {err_body[:100]}", flush=True)
+            elif he.code == 429:
+                print(f"[llm-a3] {wave_label}: ❌ {model} quota exceeded (429) — {err_body[:100]}", flush=True)
+            else:
+                print(f"[llm-a3] {wave_label}: ❌ {model} HTTP {he.code} — {err_body[:100]}", flush=True)
+            return None
+        except urllib.error.URLError as ue:
+            if isinstance(ue.reason, socket.timeout):
+                print(f"[llm-a3] {wave_label}: ❌ {model} timeout (>20s)", flush=True)
+            else:
+                print(f"[llm-a3] {wave_label}: ❌ {model} URL error — {ue.reason}", flush=True)
+            return None
+        except socket.timeout:
+            print(f"[llm-a3] {wave_label}: ❌ {model} timeout (>20s)", flush=True)
+            return None
         except Exception as e:
-            err_msg = e.read().decode('utf-8') if hasattr(e, 'read') else str(e)
-            print(f"❌ AGENT3: Échec sur {model} -> {err_msg[:120]}")
-            continue
+            print(f"[llm-a3] {wave_label}: ❌ {model} unexpected — {str(e)[:120]}", flush=True)
+            return None
 
+    # Wave 1 — hardcoded (max 3)
+    for model in models_to_try[:3]:
+        content = _try_model(model, "hardcoded")
+        if content:
+            return content
+
+    # Wave 2 — dynamic fallback via /v1/models (max 3)
+    print("[llm-a3] all hardcoded failed, fetching dynamic /v1/models list...", flush=True)
+    try:
+        req_m = urllib.request.Request(
+            "https://openrouter.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        with urllib.request.urlopen(req_m, timeout=10) as resp_m:
+            data = json.loads(resp_m.read().decode("utf-8"))
+            dynamic = [
+                m.get("id", "") for m in data.get("data", [])
+                if m.get("id", "").endswith(":free") and m.get("id") not in models_to_try
+            ]
+            dynamic = dynamic[:3]
+            print(f"[llm-a3] dynamic candidates ({len(dynamic)}): {dynamic}", flush=True)
+    except Exception as e:
+        print(f"[llm-a3] dynamic fetch failed: {e}", flush=True)
+        dynamic = []
+
+    for model in dynamic:
+        content = _try_model(model, "dynamic")
+        if content:
+            return content
+
+    print("❌ AGENT3: Tous les modèles OpenRouter (hardcoded + dynamic) ont échoué.", flush=True)
     return None
 def parse_risk_request_node(state: RiskState) -> RiskState:
     """Validate input waypoints and extract departure month."""

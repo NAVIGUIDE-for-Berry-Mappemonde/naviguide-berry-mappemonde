@@ -42,10 +42,16 @@ _OR_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
 _OR_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 _OR_HEADERS  = {"HTTP-Referer": "http://localhost:5173", "X-Title": "NAVIGUIDE"}
 _OR_MODELS   = [
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    # Updated 2026-08 — legacy slugs (nemotron-3-ultra-550b, gemma-4-31b as
+    # sole entries) returned 404 or 429. Kept in sync with orchestrator/agent3.
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "nvidia/nemotron-nano-9b-v2:free",
     "google/gemma-4-31b-it:free",
+    "google/gemma-4-26b-a4b-it:free",
 ]
 _FALLBACK_STATUSES = {429, 503}
+
+print(f"🔧 POLAR_API: cascade OpenRouter = {_OR_MODELS[:3]} (hardcoded, timeout=20s)", flush=True)
 
 
 def _call_llm(messages: list, max_tokens: int = 300) -> tuple:
@@ -72,9 +78,9 @@ def _call_llm(messages: list, max_tokens: int = 300) -> tuple:
         except Exception as exc:
             log.warning(f"Groq unavailable ({exc}) — trying OpenRouter")
 
-    # 2 — OpenRouter cascade
+    # 2 — OpenRouter cascade (max 3 attempts, timeout 20s each)
     if _OR_API_KEY:
-        for model in _OR_MODELS:
+        for model in _OR_MODELS[:3]:
             try:
                 resp = _httpx.post(
                     _OR_BASE_URL,
@@ -82,14 +88,24 @@ def _call_llm(messages: list, max_tokens: int = 300) -> tuple:
                              "Content-Type": "application/json", **_OR_HEADERS},
                     json={"model": model, "max_tokens": max_tokens,
                           "temperature": 0.2, "messages": messages},
-                    timeout=30.0,
+                    timeout=20.0,
                 )
+                if resp.status_code == 404:
+                    log.warning(f"[llm-polar] {model} removed from free tier (404)")
+                    continue
+                if resp.status_code == 429:
+                    log.warning(f"[llm-polar] {model} quota exceeded (429)")
+                    continue
                 resp.raise_for_status()
                 content = resp.json()["choices"][0]["message"]["content"]
                 if content:
+                    log.info(f"[llm-polar] ✅ {model} succeeded")
                     return content, "openrouter"
+            except _httpx.TimeoutException:
+                log.warning(f"[llm-polar] {model} timeout (>20s)")
+                continue
             except Exception as exc:
-                log.warning(f"OpenRouter {model} unavailable ({exc})")
+                log.warning(f"[llm-polar] {model} unexpected — {exc}")
                 continue
 
     return "", "fallback"
