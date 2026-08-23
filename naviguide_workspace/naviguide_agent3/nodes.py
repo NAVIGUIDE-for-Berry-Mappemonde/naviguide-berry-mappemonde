@@ -28,6 +28,8 @@ import httpx
 from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage
 
+from .state import RiskState
+
 # ── Groq (primary) + OpenRouter (fallback) ────────────────────────────────────
 _GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
 _GROQ_MODEL    = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")

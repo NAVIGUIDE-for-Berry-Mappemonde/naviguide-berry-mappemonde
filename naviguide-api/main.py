@@ -4,6 +4,7 @@ import math
 import json
 import time
 import asyncio
+import functools
 from typing import Optional, Union, List
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -829,56 +830,81 @@ def _sim_current(lat: float, lon: float) -> dict:
     }
 
 
+# ── Copernicus call helper (hard timeout + threadpool) ────────────────────────
+# copernicusmarine.open_dataset() is synchronous blocking with no built-in
+# timeout — first call can hang indefinitely if the catalog fetch fails or the
+# NRT dataset metadata refresh stalls. We wrap the call in an executor + a
+# hard asyncio timeout so /wind, /wave and /current always fall back to the
+# structured simulation within a bounded latency budget.
+_COPERNICUS_TIMEOUT_S = 20.0
+
+
+async def _run_copernicus(fn, **kwargs):
+    """Run a blocking Copernicus fetch in a worker thread with a 20s deadline.
+
+    Raises asyncio.TimeoutError on deadline exceeded — caller must catch it
+    and fall through to the simulation fallback.
+    """
+    loop = asyncio.get_event_loop()
+    return await asyncio.wait_for(
+        loop.run_in_executor(None, functools.partial(fn, **kwargs)),
+        timeout=_COPERNICUS_TIMEOUT_S,
+    )
+
+
 @app.post("/wind")
-def get_wind(request: PositionRequest):
+async def get_wind(request: PositionRequest):
     """Récupère les données de vent via Copernicus Marine, avec fallback simulation."""
     try:
         if COPERNICUS_USERNAME and COPERNICUS_PASSWORD:
-            wind_data = get_wind_data_at_position(
+            wind_data = await _run_copernicus(
+                get_wind_data_at_position,
                 latitude=request.latitude,
                 longitude=request.longitude,
                 username=COPERNICUS_USERNAME,
-                password=COPERNICUS_PASSWORD
+                password=COPERNICUS_PASSWORD,
             )
             if wind_data is not None:
                 return wind_data
-    except Exception:
+    except (asyncio.TimeoutError, Exception):
         pass
     return _sim_wind(request.latitude, request.longitude)
 
 
 @app.post("/wave")
-def get_wave(request: PositionRequest):
+async def get_wave(request: PositionRequest):
     """Récupère les données de vague via Copernicus Marine, avec fallback simulation."""
     try:
         if COPERNICUS_USERNAME and COPERNICUS_PASSWORD:
-            wave_data = get_wave_data_at_position(
+            wave_data = await _run_copernicus(
+                get_wave_data_at_position,
                 latitude=request.latitude,
                 longitude=request.longitude,
                 username=COPERNICUS_USERNAME,
-                password=COPERNICUS_PASSWORD
+                password=COPERNICUS_PASSWORD,
             )
             if wave_data is not None:
                 return wave_data
-    except Exception:
+    except (asyncio.TimeoutError, Exception):
         pass
     return _sim_wave(request.latitude, request.longitude)
 
 
 @app.post("/current")
-def get_current(request: PositionRequest):
+async def get_current(request: PositionRequest):
     """Récupère les données de courant via Copernicus Marine, avec fallback simulation."""
     try:
         if COPERNICUS_USERNAME and COPERNICUS_PASSWORD:
-            current_data = get_current_data_at_position(
+            current_data = await _run_copernicus(
+                get_current_data_at_position,
                 latitude=request.latitude,
                 longitude=request.longitude,
                 username=COPERNICUS_USERNAME,
-                password=COPERNICUS_PASSWORD
+                password=COPERNICUS_PASSWORD,
             )
             if current_data is not None:
                 return current_data
-    except Exception:
+    except (asyncio.TimeoutError, Exception):
         pass
     return _sim_current(request.latitude, request.longitude)
 
