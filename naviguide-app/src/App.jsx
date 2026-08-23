@@ -69,6 +69,35 @@ export default function App() {
   // Polar data shared between ExportSidebar (upload/VMG) and Sidebar (chat)
   const [polarData, setPolarData] = useState(null);
 
+  // Auto-load default expedition polar (Berry-Mappemonde 2026) at mount so the
+  // chat input becomes usable immediately, without requiring the user to open
+  // ExportSidebar first. If the summary endpoint 404s (no file yet), we leave
+  // polarData=null and ExportSidebar's own default-upload path kicks in.
+  useEffect(() => {
+    const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "http://localhost:8004";
+    let cancelled = false;
+    fetch(`${POLAR_API_URL}/api/v1/polar/berry-mappemonde-2026/summary`)
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then((data) => {
+        if (cancelled || !data) return;
+        setPolarData({
+          expedition_id: data.expedition_id,
+          boat_name:     data.boat_name,
+          grid_shape:    data.grid_shape,
+          vmg_summary:   data.vmg_summary,
+          created_at:    data.created_at,
+        });
+        console.log(`[polar] auto-loaded default expedition (${data.boat_name})`);
+      })
+      .catch((err) => {
+        console.warn("[polar] auto-load failed (non-fatal):", err?.message || err);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   // ── App-wide modes ──────────────────────────────────────────────────────────
   const [isOffshore,  setIsOffshore]  = useState(true);  // always Offshore (toggles removed)
   const [isCockpit,   setIsCockpit]   = useState(false); // always Onboarding (toggles removed)

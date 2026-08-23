@@ -225,7 +225,7 @@ function LfpPopover({ lfpFilter, setLfpFilter, onClose, t }) {
       ref={rootRef}
       role="dialog"
       aria-label={t("ampLfpLegend")}
-      className="absolute bottom-full mb-2 right-0 min-w-[180px] z-30
+      className="absolute top-0 left-full ml-2 min-w-[180px] max-w-[calc(100vw-320px)] z-30
                  bg-slate-900/95 backdrop-blur-md border border-white/15
                  rounded-xl shadow-2xl px-3 py-2.5"
     >
