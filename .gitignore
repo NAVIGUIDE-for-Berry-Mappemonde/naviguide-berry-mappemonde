@@ -44,3 +44,13 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Session bundle export — not for versioning
+bundle_for_complete.txt
+
+# Natural Earth shapefile ZIPs (we commit the .shp/.dbf/.shx/.prj instead)
+naviguide-api/geo_data/*.zip
+naviguide-api/geo_data/*.README.html
+
+# Orchestrator persistent plan cache (regenerated on demand)
+naviguide_workspace/naviguide_orchestrator/cache/

@@ -97,17 +97,76 @@ orchestrator = build_orchestrator()
 log.info("Multi-Agent Orchestrator compiled and ready.")
 
 # ── Berry-Mappemonde plan cache ──────────────────────────────────────────────
-# Simple TTL cache to serve the pre-configured expedition plan sub-second on
-# the second+ page-load. Populated by both the warm-up task at startup and
-# by every real /plan/berry-mappemonde call.
+# Two-tier cache to serve the pre-configured expedition plan sub-second even
+# after a service restart:
+#   • Tier 1 — in-memory dict (fast, per-process)
+#   • Tier 2 — on-disk JSON files (persistent, survives restarts)
 #
-# Key = (language, expedition_id, departure_month). Value = (timestamp, body).
-# TTL: BERRY_PLAN_CACHE_TTL_S env var, defaults to 3600 (1h). Set to 0 to
-# disable caching entirely.
+# On startup we hydrate tier 1 from tier 2. On every _cache_set we write both.
+# On tier 2 hit at startup, the warm-up task can skip the LLM call entirely
+# (saves ~30s + 1 LLM credit per restart).
+#
+# Key  = (language, expedition_id, departure_month). Files live under
+# CACHE_DIR/berry_plan_<lang>_<expedition_id>_<month>.json
+# TTL:  BERRY_PLAN_CACHE_TTL_S env var, defaults to 3600 (1h). 0 disables.
 import time as _time_mod
+import json as _json
+from pathlib import Path as _Path
+from datetime import datetime as _datetime, timezone as _timezone
+
 BERRY_PLAN_CACHE_TTL_S = int(os.getenv("BERRY_PLAN_CACHE_TTL_S", "3600"))
+CACHE_DIR = _Path(__file__).parent / "cache"
+CACHE_DIR.mkdir(exist_ok=True)
 _berry_plan_cache: dict = {}   # {key_tuple: (unix_ts, response_dict)}
-log.info(f"Berry-Mappemonde plan cache TTL = {BERRY_PLAN_CACHE_TTL_S}s ({BERRY_PLAN_CACHE_TTL_S/3600:.1f}h)")
+log.info(f"Berry-Mappemonde plan cache TTL = {BERRY_PLAN_CACHE_TTL_S}s ({BERRY_PLAN_CACHE_TTL_S/3600:.1f}h), dir={CACHE_DIR}")
+
+
+def _cache_file_for(key) -> _Path:
+    language, expedition_id, departure_month = key
+    safe_lang = str(language)[:8]
+    safe_exp  = str(expedition_id).replace("/", "_")[:64]
+    safe_mo   = "all" if departure_month is None else str(departure_month)
+    return CACHE_DIR / f"berry_plan_{safe_lang}_{safe_exp}_{safe_mo}.json"
+
+
+def _cache_meta(ts: float) -> dict:
+    """Return the metadata dict attached to every cached response so the
+    frontend can render a 'generated at / refresh in Xh' timestamp."""
+    exp_ts = ts + BERRY_PLAN_CACHE_TTL_S if BERRY_PLAN_CACHE_TTL_S > 0 else ts
+    return {
+        "generated_at": _datetime.fromtimestamp(ts, tz=_timezone.utc).isoformat(),
+        "ttl_s":        BERRY_PLAN_CACHE_TTL_S,
+        "expires_at":   _datetime.fromtimestamp(exp_ts, tz=_timezone.utc).isoformat(),
+    }
+
+
+def _cache_load_from_disk() -> int:
+    """Hydrate the RAM cache from on-disk JSON files (called once at startup).
+    Returns the number of non-expired entries loaded."""
+    if BERRY_PLAN_CACHE_TTL_S <= 0:
+        return 0
+    loaded = 0
+    for fp in CACHE_DIR.glob("berry_plan_*.json"):
+        try:
+            with fp.open() as f:
+                doc = _json.load(f)
+            ts = float(doc.get("_cached_at", 0))
+            if (_time_mod.time() - ts) > BERRY_PLAN_CACHE_TTL_S:
+                # Expired — remove stale file to save disk.
+                try: fp.unlink()
+                except OSError: pass
+                continue
+            body = doc.get("payload")
+            key  = tuple(doc.get("_key", []))
+            if key and body is not None:
+                # Rehydrate the payload's cache_metadata based on this file's ts
+                body["cache_metadata"] = _cache_meta(ts)
+                _berry_plan_cache[key] = (ts, body)
+                loaded += 1
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"[cache] failed to load {fp.name}: {exc}")
+    return loaded
+
 
 def _cache_get(key):
     if BERRY_PLAN_CACHE_TTL_S <= 0:
@@ -118,13 +177,31 @@ def _cache_get(key):
     ts, body = entry
     if (_time_mod.time() - ts) > BERRY_PLAN_CACHE_TTL_S:
         _berry_plan_cache.pop(key, None)
+        try: _cache_file_for(key).unlink()
+        except OSError: pass
         return None
     return body
+
 
 def _cache_set(key, body):
     if BERRY_PLAN_CACHE_TTL_S <= 0:
         return
-    _berry_plan_cache[key] = (_time_mod.time(), body)
+    ts = _time_mod.time()
+    # Attach metadata so the frontend can render the freshness line.
+    body["cache_metadata"] = _cache_meta(ts)
+    _berry_plan_cache[key] = (ts, body)
+    # Persist to disk (fire-and-forget on any I/O error — RAM cache still wins).
+    try:
+        with _cache_file_for(key).open("w") as f:
+            _json.dump({"_key": list(key), "_cached_at": ts, "payload": body}, f)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"[cache] persist failed for {key}: {exc}")
+
+
+# Hydrate RAM cache from disk before the warmup task runs.
+_loaded_from_disk = _cache_load_from_disk()
+if _loaded_from_disk:
+    log.info(f"[cache] hydrated {_loaded_from_disk} entr{'ies' if _loaded_from_disk > 1 else 'y'} from disk (survived restart)")
 
 
 # ── Startup warm-up ──────────────────────────────────────────────────────────
@@ -147,6 +224,13 @@ async def _warmup_expedition_plan() -> None:
         return
 
     async def _run_warmup() -> None:
+        # Skip if disk cache already provided a fresh entry for the default
+        # (fr, berry-mappemonde-2026, None) key — no need to burn an LLM call.
+        default_key = ("fr", "berry-mappemonde-2026", None)
+        if _cache_get(default_key) is not None:
+            log.info("[startup] cache hit for berry-mappemonde/fr, skipping warmup")
+            return
+
         # Give uvicorn + downstream services (naviguide-api on :8001) time
         # to bind their ports so the LangGraph node HTTP calls don't fail.
         await _asyncio.sleep(8.0)

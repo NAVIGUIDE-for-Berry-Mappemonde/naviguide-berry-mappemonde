@@ -75,7 +75,31 @@ https://openrouter-nav.preview.emergentagent.com
 
 ## Changelog
 
-### 2026-02 (session actuelle) — mise à jour
+### 2026-02 (session actuelle) — mise à jour finale
+
+**Backlog P2 → fait :**
+1. **Nettoyage git** : `bundle_for_complete.txt` + `naviguide-api/venv/` retirés du tracking (préservés sur disque). `.gitignore` enrichi.
+2. **Natural Earth 10m** : `naviguide-api/geo_data/ne_10m_land.shp` + `ne_10m_minor_islands.shp` téléchargés depuis naciscdn.org (9632 polygones chargés — précision atolls restaurée). Log startup : `✅ NE land mask loaded: 9632 polygons`.
+3. **Cache briefing persistant sur disque** :
+   - `_cache_load_from_disk()` au boot lit `naviguide_workspace/naviguide_orchestrator/cache/berry_plan_*.json` (JSON `{_key, _cached_at, payload}`) et rehydrate la RAM cache.
+   - `_cache_set()` persiste sur disque à chaque écriture.
+   - Warm-up skip si cache disque déjà chaud (économie ~40s + 1 credit LLM par restart).
+   - Log confirmé : `[cache] hydrated 1 entry from disk (survived restart)` puis `[startup] cache hit for berry-mappemonde/fr, skipping warmup`.
+   - Latence après restart : **0.395s** (vs 34-38s warmup+first request avant).
+4. **Timestamp fraîcheur briefing** :
+   - Backend : chaque réponse `/plan/berry-mappemonde` inclut `cache_metadata: {generated_at, ttl_s, expires_at}` (ISO8601 UTC).
+   - Front : `src/utils/briefingFreshness.js` formate `"Generated DD/MM/YYYY at HH:MM · refresh in Xh"` (locale fr/en).
+   - Rendu discret sous le briefing (`data-testid="briefing-freshness"`, `text-[10px] text-slate-500`).
+5. **Popups Wave/Current migrés vers MapPopup** :
+   - `src/components/WaveCurrentPopups.jsx` extrait 200 lignes inline d'App.jsx.
+   - Shell unifié (fond blanc, accent bar, close button MapPopup).
+   - Sub-components partagés `Spinner` / `ErrorRow` / `DataRow`.
+   - Accent colors : wave=`#f97316` (orange-500), current=`#22c55e` (green-500).
+6. **Chunking Vite** :
+   - `vite.config.js` : `manualChunks` = { maplibre, pmtiles, vendor }.
+   - Bundle applicatif `index-*.js` : **1.43 MB → 314 KB** (5× plus petit).
+   - `maplibre-*.js` : 1.06 MB (chunk vendor cachable long-lived).
+   - `chunkSizeWarningLimit: 800`.
 - **Investigation Copernicus (Item 1)** : 9 curls (wind/wave/current × 3 positions océaniques) → **100% de données réelles CMEMS**, 0% de fallback simulation. Latence 5.6-6.1s par appel. Champ `simulation` absent, `source` absent (= vraie donnée). Logs backend confirment `✅ Données récupérées avec succès`. Aucun fix requis.
 - **Popup Ports (Item 2)** : ajout du layer `ports-circle` dans `interactiveLayerIds`, création de `src/components/PortsPopup.jsx` (minimal : port name + country via `MapPopup`, accent color `#f59e0b`). Handler branché dans `App.jsx` onClick. Validé headless : `Port Saint Louis Du Rhone / France` sans crash.
 - **Sidebar élargie 320→360 px (Item 3)** : bouton toggle repositionné (`left-[362px]`), labels layers restaurés en versions complètes (`Buoyage`, `MPAs`) — les 5 pastilles tiennent en 1 ligne sans troncature.

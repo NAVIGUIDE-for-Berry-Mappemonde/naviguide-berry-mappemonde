@@ -20,6 +20,7 @@ import { useLegContext } from "./hooks/useLegContext";
 import { ProtectedSeasLayer } from "./components/ProtectedSeasLayer";
 import { BlueProjectsLayer, BlueProjectsPopup, useBlueProjectsData } from "./components/BlueProjectsLayer";
 import { PortsPopup } from "./components/PortsPopup";
+import { WavePopup, CurrentPopup } from "./components/WaveCurrentPopups";
 import { MapAttribution } from "./components/MapAttribution";
 import { MapPopup } from "./components/ui/MapPopup";
 
@@ -472,8 +473,11 @@ export default function App() {
       .then((r) => r.json())
       .then((data) => {
         if (data?.expedition_plan) {
-          setExpeditionPlan(data.expedition_plan);
-          setCachedPlan(lang, data.expedition_plan);         // persist per language
+          // Attach backend cache_metadata (generated_at / ttl_s / expires_at)
+          // to the plan so the Sidebar can render the freshness line.
+          const planWithMeta = { ...data.expedition_plan, cache_metadata: data.cache_metadata };
+          setExpeditionPlan(planWithMeta);
+          setCachedPlan(lang, planWithMeta);                 // persist per language
         }
       })
       .catch((err) => console.warn("Orchestrator unavailable:", err));
@@ -1183,196 +1187,19 @@ export default function App() {
           })
         )}
 
-        {/* 🌊 Popup vagues */}
-        {selectedWave && (
-          <Popup
-            longitude={selectedWave.longitude}
-            latitude={selectedWave.latitude}
-            closeButton={false}
-            closeOnClick={false}
-            anchor="top"
-            offset={25}
-            onClose={() => setSelectedWave(null)}
-            className="!bg-transparent !border-none !shadow-none custom-popup"
-          >
-            <div className="bg-white rounded-xl shadow-2xl overflow-hidden min-w-[240px] animate-fadeIn">
-              <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-4 py-3 flex items-center justify-between">
-                <h4 className="text-white font-semibold text-sm flex items-center gap-2">
-                  <span>Wave Data</span>
-                </h4>
-                <button
-                  onClick={() => setSelectedWave(null)}
-                  className="text-white/80 hover:text-white hover:bg-white/20 rounded w-6 h-6 flex items-center justify-center transition-colors font-bold"
-                >
-                  <X />
-                </button>
-              </div>
+        {/* 🌊 Wave popup — unified MapPopup shell */}
+        <WavePopup
+          state={selectedWave}
+          loading={waveLoading}
+          onClose={() => setSelectedWave(null)}
+        />
 
-              <div className="p-4">
-                {waveLoading ? (
-                  <div className="flex flex-col items-center py-5">
-                    <div className="w-8 h-8 border-4 border-orange-100 border-t-orange-600 rounded-full animate-spin" />
-                    <div className="mt-3 text-slate-500 text-sm">
-                      Loading...
-                    </div>
-                  </div>
-                ) : selectedWave.error ? (
-                  <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <span className="text-xl">⚠️</span>
-                    <div className="text-red-600 text-sm">
-                      {selectedWave.error}
-                    </div>
-                  </div>
-                ) : selectedWave.data ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center text-lg">
-                          🌊
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-500 mb-0.5">
-                            Significant Height
-                          </div>
-                          <div className="text-base font-semibold text-slate-800">
-                            {selectedWave.data.significant_wave_height_m} m
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {selectedWave.data.mean_wave_period && (
-                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center text-lg">
-                            ⏱️
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-500 mb-0.5">
-                              Period
-                            </div>
-                            <div className="text-base font-semibold text-slate-800">
-                              {selectedWave.data.mean_wave_period} s
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedWave.data.mean_wave_direction && (
-                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center text-lg">
-                            🧭
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-500 mb-0.5">
-                              Direction
-                            </div>
-                            <div className="text-base font-semibold text-slate-800">
-                              {selectedWave.data.mean_wave_direction}°
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="py-5 text-center text-slate-500 text-sm">
-                    No data available
-                  </div>
-                )}
-              </div>
-            </div>
-          </Popup>
-        )}
-
-        {selectedCurrent && (
-          <Popup
-            longitude={selectedCurrent.longitude}
-            latitude={selectedCurrent.latitude}
-            closeButton={false}
-            closeOnClick={false}
-            anchor="top"
-            offset={25}
-            onClose={() => setSelectedCurrent(null)}
-            className="!bg-transparent !border-none !shadow-none custom-popup"
-          >
-            <div className="bg-white rounded-xl shadow-2xl overflow-hidden min-w-[240px] animate-fadeIn">
-              <div className="bg-gradient-to-r from-green-500 to-green-600 px-4 py-3 flex items-center justify-between">
-                <h4 className="text-white font-semibold text-sm flex items-center gap-2">
-                  <span>Current Data</span>
-                </h4>
-                <button
-                  onClick={() => setSelectedCurrent(null)}
-                  className="text-white/80 hover:text-white hover:bg-white/20 rounded w-6 h-6 flex items-center justify-center transition-colors font-bold"
-                >
-                  <X />
-                </button>
-              </div>
-
-              <div className="p-4">
-                {currentLoading ? (
-                  <div className="flex flex-col items-center py-5">
-                    <div className="w-8 h-8 border-4 border-green-100 border-t-green-600 rounded-full animate-spin" />
-                    <div className="mt-3 text-slate-500 text-sm">
-                      Loading...
-                    </div>
-                  </div>
-                ) : selectedCurrent.error ? (
-                  <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <span className="text-xl">⚠️</span>
-                    <div className="text-red-600 text-sm">
-                      {selectedCurrent.error}
-                    </div>
-                  </div>
-                ) : selectedCurrent.data ? (
-                  <div className="space-y-3">
-                    {/* 💨 Vitesse */}
-                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center text-lg">
-                          🌊
-                        </div>
-                        <div>
-                          <div className="text-xs text-slate-500 mb-0.5">
-                            Speed
-                          </div>
-                          <div className="text-base font-semibold text-slate-800">
-                            {selectedCurrent.data.speed_knots.toFixed(2)} kn
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 🧭 Direction */}
-                    {selectedCurrent.data.direction_deg && (
-                      <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center text-lg">
-                            🧭
-                          </div>
-                          <div>
-                            <div className="text-xs text-slate-500 mb-0.5">
-                              Direction
-                            </div>
-                            <div className="text-base font-semibold text-slate-800">
-                              {selectedCurrent.data.direction_deg.toFixed(1)}°
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="py-5 text-center text-slate-500 text-sm">
-                    No data available
-                  </div>
-                )}
-              </div>
-            </div>
-          </Popup>
-        )}
+        {/* 🌀 Current popup — unified MapPopup shell */}
+        <CurrentPopup
+          state={selectedCurrent}
+          loading={currentLoading}
+          onClose={() => setSelectedCurrent(null)}
+        />
 
         {/* ── Satellite data popup — triggered by clicking the route ─────── */}
         {selectedSatellite && (

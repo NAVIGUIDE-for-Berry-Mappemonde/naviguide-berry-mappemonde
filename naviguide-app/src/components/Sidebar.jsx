@@ -10,6 +10,7 @@ import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { AgentPanel } from "./AgentPanel";
 import { MaritimeLayersPanel } from "./MaritimeLayers";
+import { formatBriefingFreshness } from "../utils/briefingFreshness";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "http://localhost:8004";
 
@@ -531,10 +532,16 @@ function BerryCard({ onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart
 /* ── Main component ───────────────────────────────────────────────────────── */
 
 export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart, onDrawFinish, isCockpit, isOffshore, polarData, maritimeLayers, simulationMode, onSimulationToggle, legContext, onNext, canNext, onPrev, canPrev }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const stats    = plan?.voyage_statistics || {};
   const alerts   = plan?.critical_alerts   || [];
   const briefing = plan?.executive_briefing || "";
+  const freshness = formatBriefingFreshness({
+    generatedAt: plan?.cache_metadata?.generated_at,
+    ttlSeconds:  plan?.cache_metadata?.ttl_s,
+    lang,
+    t,
+  });
 
   return (
     <>
@@ -693,6 +700,15 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
                 <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
                   {briefing || t("briefingPlaceholder")}
                 </p>
+                {freshness && (
+                  <div
+                    className="mt-2.5 pt-2 border-t border-slate-700/50 text-[10px] text-slate-500 leading-tight"
+                    data-testid="briefing-freshness"
+                    title={plan?.cache_metadata?.expires_at || ""}
+                  >
+                    {freshness}
+                  </div>
+                )}
               </div>
             </div>
           )}
