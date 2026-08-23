@@ -1,0 +1,13 @@
+{
+  "name": "naviguide-frontend-static",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static file server for naviguide-app/dist — served on port 3000 by supervisor.",
+  "scripts": {
+    "start": "serve -s ../naviguide-app/dist -l tcp://0.0.0.0:3000 --no-clipboard --no-port-switching",
+    "rebuild": "cd ../naviguide-app && yarn build"
+  },
+  "dependencies": {
+    "serve": "14.2.4"
+  }
+}

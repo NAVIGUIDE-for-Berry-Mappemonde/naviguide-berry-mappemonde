@@ -1,3 +1,7 @@
+# NOTE: currently unused. Real streaming (httpx SSE) implementation kept
+# for future migration. The 4 /agents/* endpoints in main.py currently import
+# from `agents.deploy_ai` (urllib, non-streaming) instead. Do not delete
+# without migrating the 4 agent endpoints first.
 from __future__ import annotations
 import asyncio
 import json

@@ -4,6 +4,10 @@ naviguide-api/node_modules/
 naviguide-api/__pycache__/
 naviguide-api/*.pyc
 naviguide-api/.venv/
+naviguide-api/venv/
+naviguide_workspace/.venv/
+naviguide_workspace/venv/
+frontend/node_modules/
 
 # Build outputs
 naviguide-app/dist/
