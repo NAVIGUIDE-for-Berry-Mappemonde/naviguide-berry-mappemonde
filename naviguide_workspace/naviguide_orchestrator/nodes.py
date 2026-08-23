@@ -31,41 +31,14 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 def _call_openrouter(prompt: str, max_tokens: int = 1200, language: str = "fr"):
     """
-    Call OpenRouter with language-aware system prompt.
-    language: 'fr' (default) or 'en' — controls system message AND briefing language.
-    Returns the LLM content string, or None on total failure.
+    Call OpenRouter with language-aware system prompt via the shared 2-key
+    cascade helper. Returns the LLM content string, or None on total failure.
     """
-    import os
-    import json
-    import urllib.request
-    from pathlib import Path
-    from dotenv import load_dotenv
+    import sys as _sys
+    from pathlib import Path as _P
+    _sys.path.insert(0, str(_P(__file__).resolve().parents[1]))
+    from _openrouter import try_openrouter
 
-    root_dir = Path(__file__).resolve().parents[2]
-    env_file = root_dir / "naviguide-api" / ".env"
-    load_dotenv(env_file)
-
-    key = os.getenv("OPENROUTER_API_KEY", "").replace('"', '').replace("'", "").strip()
-    if not key:
-        print("❌ ORCHESTRATEUR: OPENROUTER_API_KEY introuvable dans naviguide-api/.env")
-        return None
-
-    models_to_try = [
-        # Hardcoded free models observed active in 2026-08. Legacy slugs
-        # (llama-3.1-8b, gemma-2-9b, qwen-2.5-72b, mistral-7b :free) all
-        # returned 404 in August 2026 — do not put them back.
-        "nvidia/nemotron-nano-12b-v2-vl:free",
-        "nvidia/nemotron-nano-9b-v2:free",
-        "google/gemma-4-31b-it:free",
-        "google/gemma-4-26b-a4b-it:free",
-    ]
-
-    # Deterministic cascade first (max 3 attempts × 20s = 60s), then dynamic
-    # fallback via /v1/models (max 3 attempts × 20s = 60s) if hardcoded ones
-    # all fail. Total worst case ≈ 120s (aligned with Fix D proxy timeout).
-    print(f"🔧 ORCHESTRATEUR: cascade OpenRouter = {models_to_try[:3]} (hardcoded, timeout=20s)", flush=True)
-
-    # ── Language-aware system prompt ───────────────────────────────────────────
     if language == "en":
         system_content = (
             "You are the NAVIGUIDE Expedition Director, expert in offshore circumnavigations. "
@@ -83,101 +56,19 @@ def _call_openrouter(prompt: str, max_tokens: int = 1200, language: str = "fr"):
         {"role": "system", "content": system_content},
         {"role": "user",   "content": prompt},
     ]
+    return try_openrouter(messages, max_tokens=max_tokens, log_prefix="ORCHESTRATEUR")
 
-    def _try_model(model: str, wave_label: str):
-        """Attempt one model. Returns (content_str, category) where category is
-        'ok' / '404' / '429' / 'timeout' / 'other'. Content is None if not ok."""
-        import socket
-        try:
-            print(f"[llm] {wave_label}: trying {model} (lang={language})", flush=True)
-            req = urllib.request.Request(
-                "https://openrouter.ai/api/v1/chat/completions",
-                data=json.dumps({
-                    "model":    model,
-                    "messages": messages,
-                    "max_tokens": max_tokens,
-                    "provider": {"data_collection": "allow"},
-                }).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {key}",
-                    "Content-Type":  "application/json",
-                    "HTTP-Referer":  "http://localhost:5173",
-                    "X-Title":       "NAVIGUIDE",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                res = json.loads(resp.read().decode("utf-8"))
-                if "choices" in res and len(res["choices"]) > 0:
-                    content = res["choices"][0]["message"].get("content") or ""
-                    lines_clean = [
-                        l for l in content.splitlines()
-                        if "thinking process" not in l.lower()
-                        and "<think>" not in l.lower()
-                    ]
-                    content = "\n".join(lines_clean).strip()
-                    if content:
-                        print(f"[llm] {wave_label}: ✅ {model} succeeded (lang={language})", flush=True)
-                        return content, "ok"
-                return None, "other"
-        except urllib.error.HTTPError as he:
-            err_body = ""
-            try:
-                err_body = he.read().decode("utf-8", errors="ignore")[:200]
-            except Exception:
-                pass
-            if he.code == 404:
-                print(f"[llm] {wave_label}: ❌ {model} removed from free tier (404) — {err_body[:100]}", flush=True)
-                return None, "404"
-            if he.code == 429:
-                print(f"[llm] {wave_label}: ❌ {model} quota exceeded (429) — {err_body[:100]}", flush=True)
-                return None, "429"
-            print(f"[llm] {wave_label}: ❌ {model} HTTP {he.code} — {err_body[:100]}", flush=True)
-            return None, "other"
-        except urllib.error.URLError as ue:
-            if isinstance(ue.reason, socket.timeout):
-                print(f"[llm] {wave_label}: ❌ {model} timeout (>20s)", flush=True)
-                return None, "timeout"
-            print(f"[llm] {wave_label}: ❌ {model} URL error — {ue.reason}", flush=True)
-            return None, "other"
-        except socket.timeout:
-            print(f"[llm] {wave_label}: ❌ {model} timeout (>20s)", flush=True)
-            return None, "timeout"
-        except Exception as e:
-            print(f"[llm] {wave_label}: ❌ {model} unexpected — {str(e)[:120]}", flush=True)
-            return None, "other"
 
-    # Wave 1 — hardcoded models (max 3)
-    for model in models_to_try[:3]:
-        content, _cat = _try_model(model, "hardcoded")
-        if content:
-            return content
+# Emit the shared cascade config at module load for observability.
+try:
+    import sys as _sys_boot
+    from pathlib import Path as _P_boot
+    _sys_boot.path.insert(0, str(_P_boot(__file__).resolve().parents[1]))
+    from _openrouter import log_startup_config as _log_startup_config
+    _log_startup_config("ORCHESTRATEUR")
+except Exception as _exc:  # noqa: BLE001
+    print(f"[startup] ORCHESTRATEUR: log_startup_config failed: {_exc}", flush=True)
 
-    # Wave 2 — dynamic fallback via /v1/models (max 3 fresh ones)
-    print("[llm] all hardcoded failed, fetching dynamic /v1/models list...", flush=True)
-    try:
-        req_m = urllib.request.Request(
-            "https://openrouter.ai/api/v1/models",
-            headers={"Authorization": f"Bearer {key}"},
-        )
-        with urllib.request.urlopen(req_m, timeout=10) as resp_m:
-            data = json.loads(resp_m.read().decode("utf-8"))
-            dynamic = [
-                m.get("id", "") for m in data.get("data", [])
-                if m.get("id", "").endswith(":free") and m.get("id") not in models_to_try
-            ]
-            dynamic = dynamic[:3]
-            print(f"[llm] dynamic candidates ({len(dynamic)}): {dynamic}", flush=True)
-    except Exception as e:
-        print(f"[llm] dynamic fetch failed: {e}", flush=True)
-        dynamic = []
-
-    for model in dynamic:
-        content, _cat = _try_model(model, "dynamic")
-        if content:
-            return content
-
-    print("❌ ORCHESTRATEUR: Tous les modèles OpenRouter (hardcoded + dynamic) ont échoué. Passage au fallback.", flush=True)
-    return None
 
 def _get_agent1():
     try:

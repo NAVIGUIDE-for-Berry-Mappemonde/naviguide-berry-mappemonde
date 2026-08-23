@@ -18,7 +18,8 @@ import { useMarkerOffsets } from "./hooks/useMarkerOffsets";
 import { CatamaranMarker } from "./components/CatamaranMarker";
 import { useLegContext } from "./hooks/useLegContext";
 import { ProtectedSeasLayer } from "./components/ProtectedSeasLayer";
-import { PS_ATTRIBUTION_EN, PS_ATTRIBUTION_FR } from "./constants/protectedSeasConfig.js";
+import { BlueProjectsLayer, BlueProjectsPopup, useBlueProjectsData } from "./components/BlueProjectsLayer";
+import { MapAttribution } from "./components/MapAttribution";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL;
@@ -72,13 +73,12 @@ export default function App() {
   const [isCockpit,   setIsCockpit]   = useState(false); // always Onboarding (toggles removed)
   const [isLightMode, setIsLightMode] = useState(false); // false=Dark, true=Light
 
-  // ── Maritime data layers (ZEE, WPI Ports, SHOM Balisage) ────────────────────
+  // ── Maritime data layers (ZEE, WPI Ports, SHOM Balisage, MPAs, Projects) ────
   const maritimeLayers = useMaritimeLayers();
 
-  // ── Aires Marines Protégées (ProtectedSeas) ──────────────────────────────────
-  // lfpFilter : null = tout afficher, Set<number> = filtrer par score LFP
-  const [showAMP, setShowAMP] = useState(false);
-  const [lfpFilter, setLfpFilter] = useState(null);
+  // ── Blue Intelligence Projects — lazy data fetch (only when toggle ON) ─────
+  const blueProjects = useBlueProjectsData(maritimeLayers.showProjects);
+  const [projectPopup, setProjectPopup] = useState(null);   // {lng, lat, properties}
 
   // ── Simulation mode — catamaran draggable ────────────────────────────────────
   const [simulationMode, setSimulationMode] = useState(false);
@@ -745,10 +745,6 @@ export default function App() {
         onPrev={handleSimPrev}
         canPrev={simulationMode && simulationStep > 0}
         legContext={legContext}
-        showAMP={showAMP}
-        onAMPToggle={() => setShowAMP((v) => !v)}
-        lfpFilter={lfpFilter}
-        onLfpFilterChange={setLfpFilter}
       />
       <ExportSidebar
         segments={segments}
@@ -765,15 +761,17 @@ export default function App() {
         onPolarDataLoaded={setPolarData}
       />
 
-      {/* ── Attribution AMP (obligatoire quand la couche est active) ──────── */}
-      {showAMP && (
-        <div
-          className="absolute bottom-1 right-1 z-20 pointer-events-none"
-          style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', textShadow: '0 0 3px rgba(0,0,0,0.8)', maxWidth: 320, textAlign: 'right' }}
-        >
-          {lang === 'fr' ? PS_ATTRIBUTION_FR : PS_ATTRIBUTION_EN}
-        </div>
-      )}
+      {/* ── Unified map attribution (bottom-right, dynamic) ───────────────── */}
+      <MapAttribution
+        showEez={maritimeLayers.showZee}
+        showPorts={maritimeLayers.showPorts}
+        showBuoyage={maritimeLayers.showBalisage}
+        showMpas={maritimeLayers.showMpas}
+        showProjects={maritimeLayers.showProjects}
+      />
+
+      {/* ── Unified layer toggle bar (bottom-center, 5 pills + LFP popover) ─ */}
+      <MaritimeLayersPanel {...maritimeLayers} />
 
       {/* ── Slim loading phase: first-batch spinner, disappears quickly ───── */}
       {loading && (
@@ -847,12 +845,36 @@ export default function App() {
         initialViewState={{ latitude: 0, longitude: 10, zoom: 1.5 }}
         style={{ width: "100%", height: "100%" }}
         mapStyle="https://demotiles.maplibre.org/style.json"
+        attributionControl={false}
         doubleClickZoom={false}
         dragRotate={false}
         touchZoomRotate={false}
         cursor={drawingMode ? "crosshair" : routeCursor}
-        interactiveLayerIds={drawingMode ? [] : ["maritime-layer"]}
-        onClick={(e) => { if (drawingMode) { handleDrawingClick(e); } else { handleRouteClick(e); } }}
+        interactiveLayerIds={drawingMode ? [] : ["maritime-layer", "blue-projects-points", "blue-projects-clusters"]}
+        onClick={(e) => {
+          if (drawingMode) { handleDrawingClick(e); return; }
+          // Blue Projects click detection
+          const features = e.features || [];
+          const point = features.find(f => f.layer?.id === "blue-projects-points");
+          if (point) {
+            setProjectPopup({
+              lng: point.geometry.coordinates[0],
+              lat: point.geometry.coordinates[1],
+              properties: point.properties,
+            });
+            return;
+          }
+          const cluster = features.find(f => f.layer?.id === "blue-projects-clusters");
+          if (cluster) {
+            // Zoom in on cluster
+            const map = mapRef.current?.getMap?.();
+            if (map) {
+              map.easeTo({ center: cluster.geometry.coordinates, zoom: Math.min(12, map.getZoom() + 2) });
+            }
+            return;
+          }
+          handleRouteClick(e);
+        }}
         onMouseEnter={() => { if (!drawingMode) setRouteCursor("pointer"); }}
         onMouseLeave={() => { if (!drawingMode) setRouteCursor("crosshair"); }}
         onLoad={(event) => {
@@ -881,8 +903,18 @@ export default function App() {
         {/* ── Aires Marines Protégées (ProtectedSeas) — sous TOUT le reste ── */}
         <ProtectedSeasLayer
           mapRef={mapRef}
-          showAMP={showAMP}
-          lfpFilter={lfpFilter}
+          showAMP={maritimeLayers.showMpas}
+          lfpFilter={maritimeLayers.lfpFilter}
+        />
+
+        {/* ── Blue Intelligence Projects (~4465 pts, clustered) ──────────── */}
+        <BlueProjectsLayer
+          show={maritimeLayers.showProjects}
+          data={blueProjects.data}
+        />
+        <BlueProjectsPopup
+          feature={projectPopup}
+          onClose={() => setProjectPopup(null)}
         />
 
         {/* ── Maritime data layers (ZEE / Ports / Balisage) — AVANT les routes pour être en dessous ── */}

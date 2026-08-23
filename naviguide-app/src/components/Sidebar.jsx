@@ -9,7 +9,6 @@ import { riskBadgeClass } from "../utils/riskColors";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { AgentPanel } from "./AgentPanel";
-import { LFP_COLORS, LFP_LABELS } from "../constants/protectedSeasConfig.js";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "http://localhost:8004";
 
@@ -521,7 +520,7 @@ function BerryCard({ onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart
 
 /* ── Main component ───────────────────────────────────────────────────────── */
 
-export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart, onDrawFinish, isCockpit, isOffshore, polarData, maritimeLayers, simulationMode, onSimulationToggle, legContext, onNext, canNext, onPrev, canPrev, showAMP, onAMPToggle, lfpFilter, onLfpFilterChange }) {
+export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart, onDrawFinish, isCockpit, isOffshore, polarData, maritimeLayers, simulationMode, onSimulationToggle, legContext, onNext, canNext, onPrev, canPrev }) {
   const { t } = useLang();
   const stats    = plan?.voyage_statistics || {};
   const alerts   = plan?.critical_alerts   || [];
@@ -594,139 +593,8 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
             onDrawFinish={onDrawFinish}
           />
 
-          {/* ── Maritime layer toggles — ligne horizontale sous Berry-Mappemonde ── */}
-          {maritimeLayers && (
-            <div className="flex flex-col gap-1 mt-2.5">
-              <div className="flex items-center gap-1">
-              {[
-                { key: "zee",      labelKey: "layerZee",      color: "#0e7490", showKey: "showZee",      toggleKey: "setShowZee",      loadingKey: "loadingZee",      errorKey: "errorZee" },
-                { key: "ports",    labelKey: "layerPorts",    color: "#f59e0b", showKey: "showPorts",    toggleKey: "setShowPorts",    loadingKey: "loadingPorts",    errorKey: "errorPorts" },
-                { key: "balisage", labelKey: "layerBalisage", color: "#10b981", showKey: "showBalisage", toggleKey: "setShowBalisage", loadingKey: "loadingBalisage", errorKey: "errorBalisage" },
-              ].map(({ key, labelKey, color, showKey, toggleKey, loadingKey, errorKey }) => {
-                const active  = maritimeLayers[showKey];
-                const loading = maritimeLayers[loadingKey];
-                const error   = maritimeLayers[errorKey];
-                const label   = t(labelKey);
-                const title   = error ? `${label}: ${error} — ${t("layersStartHint")}` : label;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => maritimeLayers[toggleKey]((v) => !v)}
-                    title={title}
-                    className={[
-                      "flex items-center justify-center gap-1 flex-1 px-1.5 py-1 rounded-full",
-                      "text-[10px] font-semibold transition-all duration-150 select-none",
-                      active
-                        ? "bg-slate-700/80 text-white border border-white/10"
-                        : "bg-slate-800/30 text-white/35 border border-white/5 hover:text-white/60",
-                    ].join(" ")}
-                  >
-                    {loading
-                      ? <div className="w-1.5 h-1.5 rounded-full border border-white/30 border-t-white animate-spin flex-shrink-0" />
-                      : <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: active ? color : "transparent", border: `1.5px solid ${error ? "#ef4444" : color}` }} />
-                    }
-                    {label}
-                    {error && !loading && <span className="text-red-400 text-[9px]">⚠</span>}
-                  </button>
-                );
-              })}
-              </div>
-              {(maritimeLayers.errorZee || maritimeLayers.errorPorts) && (
-                <div className="text-[9px] text-amber-400/90 px-2" title={t("layersApiHint")}>
-                  {t("layersStartHint")}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Bouton AMP (Aires Marines Protégées) ──────────────────────── */}
-          {onAMPToggle && (
-            <div className="mt-1.5">
-              {/* Toggle pill AMP */}
-              <button
-                onClick={onAMPToggle}
-                title={showAMP ? t('ampHide') : t('ampShow')}
-                className={[
-                  "flex items-center justify-center gap-1 w-full px-1.5 py-1 rounded-full",
-                  "text-[10px] font-semibold transition-all duration-150 select-none",
-                  showAMP
-                    ? "bg-slate-700/80 text-white border border-white/10"
-                    : "bg-slate-800/30 text-white/35 border border-white/5 hover:text-white/60",
-                ].join(" ")}
-              >
-                <div
-                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                  style={{
-                    backgroundColor: showAMP ? '#22c55e' : 'transparent',
-                    border: `1.5px solid #22c55e`,
-                  }}
-                />
-                {t('layerAMP')}
-              </button>
-
-              {/* Légende LFP — visible uniquement quand AMP est actif */}
-              {showAMP && (
-                <div className="mt-1.5 bg-slate-800/50 rounded-xl border border-slate-700/50 px-3 py-2">
-                  <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                    {t('ampLfpLegend')}
-                  </div>
-                  <div className="space-y-1">
-                    {[5, 4, 3, 2, 1].map((lvl) => {
-                      const isActive = lfpFilter === null || lfpFilter.has(lvl);
-                      return (
-                        <button
-                          key={lvl}
-                          onClick={() => {
-                            if (!onLfpFilterChange) return;
-                            if (lfpFilter === null) {
-                              // Passage du mode "tout" au mode sélectif : on désactive ce niveau
-                              const next = new Set([5, 4, 3, 2, 1]);
-                              next.delete(lvl);
-                              onLfpFilterChange(next.size === 5 ? null : next);
-                            } else {
-                              const next = new Set(lfpFilter);
-                              if (next.has(lvl)) {
-                                next.delete(lvl);
-                              } else {
-                                next.add(lvl);
-                              }
-                              // Si tous sélectionnés → revenir à null (tout afficher)
-                              onLfpFilterChange(next.size === 5 ? null : next);
-                            }
-                          }}
-                          className={[
-                            "flex items-center gap-2 w-full rounded-lg px-2 py-1 transition-all",
-                            "text-[10px] text-left",
-                            isActive
-                              ? "bg-slate-700/50 text-white"
-                              : "bg-transparent text-slate-500 hover:text-slate-400",
-                          ].join(" ")}
-                        >
-                          <div
-                            className="w-2.5 h-2.5 rounded-sm flex-shrink-0 transition-opacity"
-                            style={{
-                              backgroundColor: LFP_COLORS[lvl],
-                              opacity: isActive ? 1 : 0.25,
-                            }}
-                          />
-                          <span className={isActive ? "" : "line-through"}>
-                            {(LFP_LABELS[t('_lang')] ?? LFP_LABELS.en)[lvl]}
-                          </span>
-                          {isActive && (
-                            <span className="ml-auto text-slate-500 text-[8px]">✓</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* Attribution obligatoire */}
-                  <div className="mt-1.5 text-[8px] text-slate-500 leading-relaxed border-t border-slate-700/50 pt-1.5">
-                    {t('ampAttribution')}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {/* ── Maritime layer toggles moved to bottom-center pill bar
+                (MaritimeLayersPanel in App.jsx). ────────────────────────── */}
 
           {/* ── Bouton Mode Simulation ─────────────────────────────────────── */}
           {onSimulationToggle && (

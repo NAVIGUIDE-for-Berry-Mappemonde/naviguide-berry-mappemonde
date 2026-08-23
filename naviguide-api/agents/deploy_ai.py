@@ -1,13 +1,35 @@
+"""
+NAVIGUIDE — agents/deploy_ai.py
+================================
+LLM helper used by the 4 SSE agent endpoints (/api/agents/{meteo, pirate,
+guard, custom}) in naviguide-api/main.py.
+
+Delegates to the shared `_openrouter.py` helper in /app/naviguide_workspace/
+so the 2-key × (hardcoded + dynamic) cascade stays IN SYNC across all 4
+LLM pipelines (orchestrator briefing, agent3 briefing, polar chat, SSE agents).
+
+Streaming: NOT touched. The `stream_llm()` coroutine still yields the entire
+LLM response as a single SSE chunk. Real token-by-token streaming would
+require migrating to /app/naviguide-api/deploy_ai.py (httpx SSE) — out of
+scope.
+"""
 from __future__ import annotations
-import os, json, urllib.request
-from typing import AsyncIterator, List
+import sys
 from pathlib import Path
-from dotenv import load_dotenv
+from typing import AsyncIterator, List
 
-env_file = Path(__file__).resolve().parents[1] / ".env"
-load_dotenv(env_file)
+# Path to the shared helper — one level up from /app/naviguide-api/, then
+# into /app/naviguide_workspace/. Injected in sys.path once at module load.
+_WORKSPACE = Path(__file__).resolve().parents[2] / "naviguide_workspace"
+if str(_WORKSPACE) not in sys.path:
+    sys.path.insert(0, str(_WORKSPACE))
 
-_OR_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+from _openrouter import try_openrouter, log_startup_config  # noqa: E402
+
+_ERROR_UNAVAILABLE = "⚠️ LLM service temporarily unavailable."
+
+log_startup_config("AGENTS")
+
 
 def _build_messages(prompt: str, system_prompt: str = "") -> List[dict]:
     messages = []
@@ -16,38 +38,15 @@ def _build_messages(prompt: str, system_prompt: str = "") -> List[dict]:
     messages.append({"role": "user", "content": prompt})
     return messages
 
+
 def call_llm(prompt: str, system_prompt: str = "") -> str:
-    key = os.getenv("OPENROUTER_API_KEY", "").replace('"', '').replace("'", "").strip()
+    """2-key × (hardcoded + dynamic) cascade with UI-safe fallback message."""
     messages = _build_messages(prompt, system_prompt)
-    models = [
-        os.getenv("OPENROUTER_MODEL_1", "openrouter/free"),
-        os.getenv("OPENROUTER_MODEL_2", "openrouter/auto")
-    ]
+    content  = try_openrouter(messages, max_tokens=800, log_prefix="AGENTS")
+    return content if content else _ERROR_UNAVAILABLE
 
-    for model in models:
-        try:
-            req = urllib.request.Request(
-                _OR_BASE_URL,
-                data=json.dumps({
-                    "model": model,
-                    "messages": messages,
-                    "provider": {"data_collection": "allow"}
-                }).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:5173"
-                }
-            )
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                res = json.loads(resp.read().decode("utf-8"))
-                if "choices" in res and len(res["choices"]) > 0:
-                    return res["choices"][0]["message"]["content"]
-        except Exception:
-            continue
-
-    return "⚠️ LLM service temporarily unavailable."
 
 async def stream_llm(prompt: str, system_prompt: str = "") -> AsyncIterator[str]:
+    """SSE stream — 1 chunk (see module docstring)."""
     text = call_llm(prompt, system_prompt)
     yield text

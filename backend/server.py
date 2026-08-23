@@ -173,6 +173,19 @@ async def _warmup_searoute():
         print(f"[startup] searoute warmup failed (non-fatal): {exc}", flush=True)
 
 
+@app.on_event("startup")
+async def _import_agents_module():
+    """Force-import agents.deploy_ai so its log_startup_config runs at boot,
+    otherwise the AGENTS cascade config would only appear on the first SSE call.
+    """
+    try:
+        sys.path.insert(0, str(NAVIGUIDE_API_DIR))
+        import agents.deploy_ai  # noqa: F401
+        print("[startup] agents.deploy_ai eagerly loaded", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[startup] agents.deploy_ai import failed (non-fatal): {exc}", flush=True)
+
+
 # Mount the naviguide-api FastAPI app on /api
 # All its routes /route, /wind, /wave, /current, /proxy/*, /agents/*,
 # /simulation/*, plus the two proxies defined above, become /api/*
