@@ -17,6 +17,8 @@ import {
 import { useMarkerOffsets } from "./hooks/useMarkerOffsets";
 import { CatamaranMarker } from "./components/CatamaranMarker";
 import { useLegContext } from "./hooks/useLegContext";
+import { ProtectedSeasLayer } from "./components/ProtectedSeasLayer";
+import { PS_ATTRIBUTION_EN, PS_ATTRIBUTION_FR } from "./constants/protectedSeasConfig.js";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL;
@@ -80,6 +82,11 @@ export default function App() {
 
   // ── Maritime data layers (ZEE, WPI Ports, SHOM Balisage) ────────────────────
   const maritimeLayers = useMaritimeLayers();
+
+  // ── Aires Marines Protégées (ProtectedSeas) ──────────────────────────────────
+  // lfpFilter : null = tout afficher, Set<number> = filtrer par score LFP
+  const [showAMP, setShowAMP] = useState(false);
+  const [lfpFilter, setLfpFilter] = useState(null);
 
   // ── Simulation mode — catamaran draggable ────────────────────────────────────
   const [simulationMode, setSimulationMode] = useState(false);
@@ -746,6 +753,10 @@ export default function App() {
         onPrev={handleSimPrev}
         canPrev={simulationMode && simulationStep > 0}
         legContext={legContext}
+        showAMP={showAMP}
+        onAMPToggle={() => setShowAMP((v) => !v)}
+        lfpFilter={lfpFilter}
+        onLfpFilterChange={setLfpFilter}
       />
       <ExportSidebar
         segments={segments}
@@ -761,6 +772,16 @@ export default function App() {
         polarData={polarData}
         onPolarDataLoaded={setPolarData}
       />
+
+      {/* ── Attribution AMP (obligatoire quand la couche est active) ──────── */}
+      {showAMP && (
+        <div
+          className="absolute bottom-1 right-1 z-20 pointer-events-none"
+          style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', textShadow: '0 0 3px rgba(0,0,0,0.8)', maxWidth: 320, textAlign: 'right' }}
+        >
+          {lang === 'fr' ? PS_ATTRIBUTION_FR : PS_ATTRIBUTION_EN}
+        </div>
+      )}
 
       {/* ── Slim loading phase: first-batch spinner, disappears quickly ───── */}
       {loading && (
@@ -865,6 +886,13 @@ export default function App() {
           });
         }}
       >
+        {/* ── Aires Marines Protégées (ProtectedSeas) — sous TOUT le reste ── */}
+        <ProtectedSeasLayer
+          mapRef={mapRef}
+          showAMP={showAMP}
+          lfpFilter={lfpFilter}
+        />
+
         {/* ── Maritime data layers (ZEE / Ports / Balisage) — AVANT les routes pour être en dessous ── */}
         <MaritimeLayers
           showZee={maritimeLayers.showZee}

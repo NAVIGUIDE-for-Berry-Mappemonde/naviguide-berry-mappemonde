@@ -143,6 +143,19 @@ export default {
   layersApiHint:   "ZEE et Ports nécessitent naviguide-api (port 8000)",
   layersStartHint: "Lancer ./naviguide_workspace/start_local.sh",
 
+  // ── Aires Marines Protégées (ProtectedSeas) ───────────────────────────────────
+  layerAMP:            "AMP",
+  layerAMPTitle:       "Aires Marines Protégées (ProtectedSeas Navigator V2)",
+  ampShow:             "Afficher les AMP",
+  ampHide:             "Masquer les AMP",
+  ampLfpLegend:        "Filtrer par niveau LFP",
+  ampLfpScore:         "Score LFP",
+  ampAnchorage:        "Mouillage",
+  ampFishing:          "Pêche",
+  ampSeeNavigator:     "Voir sur Navigator",
+  ampUnnamed:          "Zone marine protégée",
+  ampAttribution:      "AMP : ProtectedSeas Navigator. Zetterlind et al. (2025). navigatormap.org",
+
   // ── Polar Chat (Sidebar) ───────────────────────────────────────────────────
   polarChatLoadPrompt:     "Chargez les polaires (panneau droit) pour activer le chat.",
   polarChatAskPlaceholder: "Question sur les polaires…",

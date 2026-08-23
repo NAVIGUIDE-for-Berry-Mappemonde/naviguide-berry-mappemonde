@@ -142,6 +142,19 @@ export default {
   layersApiHint:   "EEZ and Ports require naviguide-api (port 8000)",
   layersStartHint: "Run ./naviguide_workspace/start_local.sh",
 
+  // ── Marine Protected Areas (ProtectedSeas) ─────────────────────────────────
+  layerAMP:            "MPAs",
+  layerAMPTitle:       "Marine Protected Areas (ProtectedSeas Navigator V2)",
+  ampShow:             "Show MPAs",
+  ampHide:             "Hide MPAs",
+  ampLfpLegend:        "Filter by LFP level",
+  ampLfpScore:         "LFP Score",
+  ampAnchorage:        "Anchoring",
+  ampFishing:          "Fishing",
+  ampSeeNavigator:     "View on Navigator",
+  ampUnnamed:          "Marine protected area",
+  ampAttribution:      "MPAs: ProtectedSeas Navigator. Zetterlind et al. (2025). navigatormap.org",
+
   // ── Polar Chat (Sidebar) ───────────────────────────────────────────────────
   polarChatLoadPrompt:     "Load polars (right panel) to enable chat.",
   polarChatAskPlaceholder: "Ask about polars…",

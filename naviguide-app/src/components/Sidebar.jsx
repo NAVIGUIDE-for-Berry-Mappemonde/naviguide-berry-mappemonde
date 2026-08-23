@@ -4,11 +4,12 @@
  * The Berry-Mappemonde card is an interactive route switcher with file import.
  */
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, AlertTriangle, Navigation, Shield, Upload, X, Pencil, CheckCircle, Send, Loader2, Compass, Play, Square } from "lucide-react";
+import { ChevronLeft, ChevronRight, AlertTriangle, Navigation, Shield, Upload, X, Pencil, CheckCircle, Send, Loader2, Compass, Play, Square, Anchor } from "lucide-react";
 import { riskBadgeClass } from "../utils/riskColors";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { AgentPanel } from "./AgentPanel";
+import { LFP_COLORS, LFP_LABELS } from "../constants/protectedSeasConfig.js";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "http://localhost:8004";
 
@@ -520,7 +521,7 @@ function BerryCard({ onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart
 
 /* ── Main component ───────────────────────────────────────────────────────── */
 
-export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart, onDrawFinish, isCockpit, isOffshore, polarData, maritimeLayers, simulationMode, onSimulationToggle, legContext, onNext, canNext, onPrev, canPrev }) {
+export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBerry, isDrawing, onDrawStart, onDrawFinish, isCockpit, isOffshore, polarData, maritimeLayers, simulationMode, onSimulationToggle, legContext, onNext, canNext, onPrev, canPrev, showAMP, onAMPToggle, lfpFilter, onLfpFilterChange }) {
   const { t } = useLang();
   const stats    = plan?.voyage_statistics || {};
   const alerts   = plan?.critical_alerts   || [];
@@ -633,6 +634,95 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
               {(maritimeLayers.errorZee || maritimeLayers.errorPorts) && (
                 <div className="text-[9px] text-amber-400/90 px-2" title={t("layersApiHint")}>
                   {t("layersStartHint")}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Bouton AMP (Aires Marines Protégées) ──────────────────────── */}
+          {onAMPToggle && (
+            <div className="mt-1.5">
+              {/* Toggle pill AMP */}
+              <button
+                onClick={onAMPToggle}
+                title={showAMP ? t('ampHide') : t('ampShow')}
+                className={[
+                  "flex items-center justify-center gap-1 w-full px-1.5 py-1 rounded-full",
+                  "text-[10px] font-semibold transition-all duration-150 select-none",
+                  showAMP
+                    ? "bg-slate-700/80 text-white border border-white/10"
+                    : "bg-slate-800/30 text-white/35 border border-white/5 hover:text-white/60",
+                ].join(" ")}
+              >
+                <div
+                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  style={{
+                    backgroundColor: showAMP ? '#22c55e' : 'transparent',
+                    border: `1.5px solid #22c55e`,
+                  }}
+                />
+                {t('layerAMP')}
+              </button>
+
+              {/* Légende LFP — visible uniquement quand AMP est actif */}
+              {showAMP && (
+                <div className="mt-1.5 bg-slate-800/50 rounded-xl border border-slate-700/50 px-3 py-2">
+                  <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                    {t('ampLfpLegend')}
+                  </div>
+                  <div className="space-y-1">
+                    {[5, 4, 3, 2, 1].map((lvl) => {
+                      const isActive = lfpFilter === null || lfpFilter.has(lvl);
+                      return (
+                        <button
+                          key={lvl}
+                          onClick={() => {
+                            if (!onLfpFilterChange) return;
+                            if (lfpFilter === null) {
+                              // Passage du mode "tout" au mode sélectif : on désactive ce niveau
+                              const next = new Set([5, 4, 3, 2, 1]);
+                              next.delete(lvl);
+                              onLfpFilterChange(next.size === 5 ? null : next);
+                            } else {
+                              const next = new Set(lfpFilter);
+                              if (next.has(lvl)) {
+                                next.delete(lvl);
+                              } else {
+                                next.add(lvl);
+                              }
+                              // Si tous sélectionnés → revenir à null (tout afficher)
+                              onLfpFilterChange(next.size === 5 ? null : next);
+                            }
+                          }}
+                          className={[
+                            "flex items-center gap-2 w-full rounded-lg px-2 py-1 transition-all",
+                            "text-[10px] text-left",
+                            isActive
+                              ? "bg-slate-700/50 text-white"
+                              : "bg-transparent text-slate-500 hover:text-slate-400",
+                          ].join(" ")}
+                        >
+                          <div
+                            className="w-2.5 h-2.5 rounded-sm flex-shrink-0 transition-opacity"
+                            style={{
+                              backgroundColor: LFP_COLORS[lvl],
+                              opacity: isActive ? 1 : 0.25,
+                            }}
+                          />
+                          <span className={isActive ? "" : "line-through"}>
+                            {(LFP_LABELS[t('_lang')] ?? LFP_LABELS.en)[lvl]}
+                          </span>
+                          {isActive && (
+                            <span className="ml-auto text-slate-500 text-[8px]">✓</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Attribution obligatoire */}
+                  <div className="mt-1.5 text-[8px] text-slate-500 leading-relaxed border-t border-slate-700/50 pt-1.5">
+                    {t('ampAttribution')}
+                  </div>
                 </div>
               )}
             </div>
