@@ -13,10 +13,11 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Source, Layer, Popup } from 'react-map-gl/maplibre';
+import { Source, Layer } from 'react-map-gl/maplibre';
 import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import { useLang } from '../i18n/LangContext.jsx';
+import { MapPopup } from './ui/MapPopup.jsx';
 import {
   PS_S3_BASE,
   PS_NAVIGATOR_URL,
@@ -162,81 +163,70 @@ export function ProtectedSeasLayer({ mapRef, showAMP, lfpFilter }) {
       })}
 
       {popup && (
-        <Popup
-          longitude={popup.lng}
-          latitude={popup.lat}
+        <MapPopup
+          lng={popup.lng}
+          lat={popup.lat}
+          title={popup.props?.SITE_NAME?.trim() || t('ampUnnamed')}
+          accentColor={LFP_COLORS[popup.props?.LFP ?? popup.lfpN]}
           onClose={() => setPopup(null)}
-          closeOnClick={false}
-          maxWidth="290px"
-          style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+          maxWidth={320}
         >
-          <div style={{ padding: '4px 2px', minWidth: 200 }}>
-
-            {/* Site name */}
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#111827', marginBottom: 5, lineHeight: 1.3 }}>
-              {popup.props?.SITE_NAME?.trim() || t('ampUnnamed')}
-            </div>
-
-            {/* LFP badge */}
-            <div style={{
+          {/* LFP badge */}
+          <div
+            style={{
               display: 'inline-flex', alignItems: 'center',
               background: LFP_COLORS[popup.props?.LFP ?? popup.lfpN],
               color: '#fff', borderRadius: 4,
-              padding: '2px 8px', fontSize: 11, fontWeight: 600, marginBottom: 6,
-            }}>
-              {LFP_LABELS[lang]?.[popup.props?.LFP ?? popup.lfpN]
-                ?? `LFP ${popup.props?.LFP ?? popup.lfpN}`}
-            </div>
-
-            {/* Designation (truncated) */}
-            {popup.props?.DESIGNATION?.trim?.() && (
-              <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 6, fontStyle: 'italic', lineHeight: 1.3 }}>
-                {popup.props.DESIGNATION.trim().slice(0, 90)}
-                {popup.props.DESIGNATION.trim().length > 90 ? '…' : ''}
-              </div>
-            )}
-
-            {/* Restrictions */}
-            <div style={{ marginBottom: 6 }}>
-              <RestrictionRow
-                value={popup.props?.COMMERCIAL}
-                label={lang === 'fr' ? 'Pêche commerciale' : 'Commercial fishing'}
-                lang={lang}
-              />
-              <RestrictionRow
-                value={popup.props?.ARTISANAL_}
-                label={lang === 'fr' ? 'Pêche artisanale' : 'Artisanal fishing'}
-                lang={lang}
-              />
-              <RestrictionRow
-                value={popup.props?.RECREATION}
-                label={lang === 'fr' ? 'Activités récréatives' : 'Recreation'}
-                lang={lang}
-              />
-              <RestrictionRow
-                value={popup.props?.SPEED}
-                label={lang === 'fr' ? 'Vitesse' : 'Speed'}
-                lang={lang}
-              />
-            </div>
-
-            {/* Navigator link */}
-            {popup.props?.OBJECTID && (
-              <a
-                href={`${PS_NAVIGATOR_URL}?pin=${popup.props.OBJECTID}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'inline-block', fontSize: 11, color: '#2563eb',
-                  textDecoration: 'none', borderTop: '1px solid #e5e7eb',
-                  paddingTop: 4, marginTop: 2, width: '100%',
-                }}
-              >
-                {t('ampSeeNavigator')} ↗
-              </a>
-            )}
+              padding: '2px 8px', fontSize: 11, fontWeight: 600, marginBottom: 8,
+            }}
+          >
+            {LFP_LABELS[lang]?.[popup.props?.LFP ?? popup.lfpN]
+              ?? `LFP ${popup.props?.LFP ?? popup.lfpN}`}
           </div>
-        </Popup>
+
+          {/* Designation */}
+          {popup.props?.DESIGNATION?.trim?.() && (
+            <div className="text-[10px] text-slate-500 italic leading-snug mb-2">
+              {popup.props.DESIGNATION.trim()}
+            </div>
+          )}
+
+          {/* Restrictions */}
+          <div className="mb-2">
+            <RestrictionRow
+              value={popup.props?.COMMERCIAL}
+              label={lang === 'fr' ? 'Pêche commerciale' : 'Commercial fishing'}
+              lang={lang}
+            />
+            <RestrictionRow
+              value={popup.props?.ARTISANAL_}
+              label={lang === 'fr' ? 'Pêche artisanale' : 'Artisanal fishing'}
+              lang={lang}
+            />
+            <RestrictionRow
+              value={popup.props?.RECREATION}
+              label={lang === 'fr' ? 'Activités récréatives' : 'Recreation'}
+              lang={lang}
+            />
+            <RestrictionRow
+              value={popup.props?.SPEED}
+              label={lang === 'fr' ? 'Vitesse' : 'Speed'}
+              lang={lang}
+            />
+          </div>
+
+          {/* Navigator link */}
+          {popup.props?.OBJECTID && (
+            <a
+              href={`${PS_NAVIGATOR_URL}?pin=${popup.props.OBJECTID}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-[11px] text-blue-600 hover:text-blue-800 border-t border-slate-200 pt-1.5 mt-1"
+            >
+              {t('ampSeeNavigator')} ↗
+            </a>
+          )}
+        </MapPopup>
       )}
     </>
   );

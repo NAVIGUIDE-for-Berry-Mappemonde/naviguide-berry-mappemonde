@@ -9,6 +9,7 @@ import { riskBadgeClass } from "../utils/riskColors";
 import { useLang } from "../i18n/LangContext.jsx";
 import { SimulationPanel } from "./SimulationPanel";
 import { AgentPanel } from "./AgentPanel";
+import { MaritimeLayersPanel } from "./MaritimeLayers";
 
 const POLAR_API_URL = import.meta.env.VITE_POLAR_API_URL ?? "http://localhost:8004";
 
@@ -593,8 +594,10 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
             onDrawFinish={onDrawFinish}
           />
 
-          {/* ── Maritime layer toggles moved to bottom-center pill bar
-                (MaritimeLayersPanel in App.jsx). ────────────────────────── */}
+          {/* ── Maritime layer toggles — grid 3×2 dans la sidebar ─────── */}
+          {maritimeLayers && (
+            <MaritimeLayersPanel {...maritimeLayers} />
+          )}
 
           {/* ── Bouton Mode Simulation ─────────────────────────────────────── */}
           {onSimulationToggle && (

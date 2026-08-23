@@ -20,6 +20,7 @@ import { useLegContext } from "./hooks/useLegContext";
 import { ProtectedSeasLayer } from "./components/ProtectedSeasLayer";
 import { BlueProjectsLayer, BlueProjectsPopup, useBlueProjectsData } from "./components/BlueProjectsLayer";
 import { MapAttribution } from "./components/MapAttribution";
+import { MapPopup } from "./components/ui/MapPopup";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL;
@@ -770,9 +771,6 @@ export default function App() {
         showProjects={maritimeLayers.showProjects}
       />
 
-      {/* ── Unified layer toggle bar (bottom-center, 5 pills + LFP popover) ─ */}
-      <MaritimeLayersPanel {...maritimeLayers} />
-
       {/* ── Slim loading phase: first-batch spinner, disappears quickly ───── */}
       {loading && (
         <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 pointer-events-none">
@@ -1327,33 +1325,15 @@ export default function App() {
 
         {/* ── Satellite data popup — triggered by clicking the route ─────── */}
         {selectedSatellite && (
-          <Popup
-            longitude={selectedSatellite.lon}
-            latitude={selectedSatellite.lat}
-            closeButton={false}
-            closeOnClick={false}
-            anchor="top"
-            offset={20}
+          <MapPopup
+            lng={selectedSatellite.lon}
+            lat={selectedSatellite.lat}
+            title={`${t("satelliteData")} — ${selectedSatellite.lat.toFixed(3)}°, ${selectedSatellite.lon.toFixed(3)}°`}
+            accentColor="#3b82f6"
             onClose={() => setSelectedSatellite(null)}
-            className="!bg-transparent !border-none !shadow-none custom-popup"
+            maxWidth={340}
           >
-            <div className="bg-white rounded-xl shadow-2xl overflow-hidden animate-fadeIn" style={{ minWidth: 270 }}>
-              {/* Header */}
-              <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-4 py-3 flex items-center justify-between">
-                <div>
-                  <div className="text-white font-semibold text-sm">{t("satelliteData")}</div>
-                  <div className="text-slate-400 text-xs mt-0.5">
-                    {selectedSatellite.lat.toFixed(3)}°, {selectedSatellite.lon.toFixed(3)}°
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSelectedSatellite(null)}
-                  className="text-white/80 hover:text-white hover:bg-white/20 rounded w-6 h-6 flex items-center justify-center transition-colors"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-
+            <div className="-mx-3.5 -mt-1">
               {/* Tabs */}
               {/* ── Tabs ──────────────────────────────────────────────── */}
               <div className="flex border-b border-slate-200">
@@ -1596,10 +1576,8 @@ export default function App() {
                 ) : null}
               </div>
             </div>
-          </Popup>
+          </MapPopup>
         )}
-
-        {/* ── Catamaran simulation marker ────────────────────────────────── */}
         {simulationMode && (
           <CatamaranMarker
             latitude={legContext ? legContext.snappedPosition[1] : activeCatamaranPos.lat}

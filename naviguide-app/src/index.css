@@ -73,9 +73,27 @@
 
 /* ── End offshore mode ──────────────────────────────────────────────────── */
 
+/* ── MapLibre popup base — transparent wrapper + hidden internals ───────────
+ * All NAVIGUIDE popups use the shared <MapPopup> shell which renders its own
+ * white card + shadow. We strip MapLibre's default padding and background so
+ * the shell can render edge-to-edge, and match the tip color to the shell so
+ * the little triangle stays white too.
+ */
 .maplibregl-popup-content {
   background: transparent !important;
   box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0.75rem !important;   /* matches rounded-xl of MapPopup */
+}
+.maplibregl-popup-tip {
+  border-top-color:    #fff !important;
+  border-bottom-color: #fff !important;
+  border-left-color:   #fff !important;
+  border-right-color:  #fff !important;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));
+}
+.maplibregl-popup-close-button {
+  display: none !important;   /* shell renders its own X button */
 }
 
 /* ── Wind/wave alert markers — invisible by default, revealed on hover ─────── */

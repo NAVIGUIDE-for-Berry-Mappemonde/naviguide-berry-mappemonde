@@ -269,85 +269,120 @@ export function MaritimeLayersPanel(props) {
   const { t } = useLang();
   const [lfpOpen, setLfpOpen] = useState(false);
 
+  // Split layers into 2 rows: 3 on top, 2 below (MPAs on bottom-left keeps
+  // its chevron for LFP filter). Widths are 3-col grid; MPAs is 1 col, but
+  // its chevron sits INSIDE the same button cell → we let the cell size
+  // adapt via flex.
+  const rowTop    = LAYER_CONFIG.slice(0, 3);
+  const rowBottom = LAYER_CONFIG.slice(3);   // MPAs + Projects
+
   return (
     <div
-      className="absolute bottom-5 left-1/2 -translate-x-1/2 z-25 flex flex-row items-center gap-1.5
-                 bg-slate-900/80 backdrop-blur-sm border border-white/10 rounded-full px-3 py-1.5 shadow-xl"
-      style={{ pointerEvents: "auto", zIndex: 25 }}
+      className="grid grid-cols-3 gap-1.5 mt-2.5"
+      style={{ pointerEvents: "auto" }}
     >
-      <span className="text-white/35 text-[9px] font-semibold uppercase tracking-widest mr-1 select-none">
-        {t("layersLabel")}
-      </span>
+      {rowTop.map((cfg) => (
+        <PillCell
+          key={cfg.key}
+          cfg={cfg}
+          props={props}
+          lfpOpen={lfpOpen}
+          setLfpOpen={setLfpOpen}
+          t={t}
+        />
+      ))}
+      {/* Row 2: MPAs (1 col) + Projects (2 cols wide) */}
+      {rowBottom.map((cfg, i) => (
+        <div
+          key={cfg.key}
+          className={i === rowBottom.length - 1 ? "col-span-2" : ""}
+        >
+          <PillCell
+            cfg={cfg}
+            props={props}
+            lfpOpen={lfpOpen}
+            setLfpOpen={setLfpOpen}
+            t={t}
+            fullWidth
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
 
-      {LAYER_CONFIG.map(({ key, labelKey, titleKey, color, showKey, toggleKey, loadingKey, errorKey, hasPopover }) => {
-        const active  = props[showKey];
-        const loading = props[loadingKey];
-        const error   = props[errorKey];
-        const isMpas  = key === "mpas";
+/**
+ * PillCell — one toggle pill (+ optional chevron popover).
+ * `fullWidth` stretches the pill to fill its grid cell.
+ */
+function PillCell({ cfg, props, lfpOpen, setLfpOpen, t, fullWidth = false }) {
+  const { key, labelKey, titleKey, color, showKey, toggleKey, loadingKey, errorKey, hasPopover } = cfg;
+  const active  = props[showKey];
+  const loading = props[loadingKey];
+  const error   = props[errorKey];
+  const isMpas  = key === "mpas";
+  const widthCls = fullWidth ? "w-full" : "";
 
-        return (
-          <div key={key} className="relative flex items-center">
-            <button
-              onClick={() => props[toggleKey]((v) => !v)}
-              title={t(titleKey)}
-              className={[
-                "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold",
-                "transition-all duration-150 select-none",
-                hasPopover ? "rounded-l-full" : "rounded-full",
-                active
-                  ? "bg-slate-700/90 text-white border border-white/20"
-                  : "bg-transparent text-white/45 border border-white/10 hover:text-white/80 hover:bg-slate-700/50",
-                error ? "border-red-500/50" : "",
-              ].join(" ")}
-            >
-              {loading ? (
-                <div className="w-2 h-2 rounded-full border-2 border-white/30 border-t-white animate-spin flex-shrink-0" />
-              ) : (
-                <div
-                  className="w-2 h-2 rounded-full flex-shrink-0 transition-colors"
-                  style={{
-                    backgroundColor: active ? color : "transparent",
-                    border: `1.5px solid ${error ? "#ef4444" : color}`,
-                  }}
-                />
-              )}
-              <span>{t(labelKey)}</span>
-              {error && !loading && (
-                <span className="text-red-400 text-[10px]" title={error}>⚠</span>
-              )}
-            </button>
+  return (
+    <div className="relative flex items-center">
+      <button
+        onClick={() => props[toggleKey]((v) => !v)}
+        title={t(titleKey)}
+        className={[
+          "flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-semibold",
+          "transition-all duration-150 select-none",
+          hasPopover ? "rounded-l-full flex-1" : `rounded-full ${widthCls}`,
+          active
+            ? "bg-slate-700/90 text-white border border-white/20"
+            : "bg-transparent text-white/45 border border-white/10 hover:text-white/80 hover:bg-slate-700/50",
+          error ? "border-red-500/50" : "",
+        ].join(" ")}
+      >
+        {loading ? (
+          <div className="w-1.5 h-1.5 rounded-full border-2 border-white/30 border-t-white animate-spin flex-shrink-0" />
+        ) : (
+          <div
+            className="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors"
+            style={{
+              backgroundColor: active ? color : "transparent",
+              border: `1.5px solid ${error ? "#ef4444" : color}`,
+            }}
+          />
+        )}
+        <span>{t(labelKey)}</span>
+        {error && !loading && (
+          <span className="text-red-400 text-[10px]" title={error}>⚠</span>
+        )}
+      </button>
 
-            {hasPopover && (
-              <>
-                <button
-                  onClick={() => setLfpOpen((v) => !v)}
-                  title={t("ampLfpLegend")}
-                  aria-expanded={lfpOpen}
-                  aria-haspopup="dialog"
-                  className={[
-                    "flex items-center justify-center px-1.5 py-1 rounded-r-full text-[11px]",
-                    "border-l-0 transition-all duration-150 select-none",
-                    active
-                      ? "bg-slate-700/90 text-white border border-white/20"
-                      : "bg-transparent text-white/45 border border-white/10 hover:text-white/80 hover:bg-slate-700/50",
-                  ].join(" ")}
-                >
-                  <span aria-hidden="true">{lfpOpen ? "▴" : "▾"}</span>
-                </button>
+      {hasPopover && (
+        <>
+          <button
+            onClick={() => setLfpOpen((v) => !v)}
+            title={t("ampLfpLegend")}
+            aria-expanded={lfpOpen}
+            aria-haspopup="dialog"
+            className={[
+              "flex items-center justify-center px-1.5 py-1 rounded-r-full text-[10px]",
+              "border-l-0 transition-all duration-150 select-none",
+              active
+                ? "bg-slate-700/90 text-white border border-white/20"
+                : "bg-transparent text-white/45 border border-white/10 hover:text-white/80 hover:bg-slate-700/50",
+            ].join(" ")}
+          >
+            <span aria-hidden="true">{lfpOpen ? "▴" : "▾"}</span>
+          </button>
 
-                {isMpas && lfpOpen && (
-                  <LfpPopover
-                    lfpFilter={props.lfpFilter}
-                    setLfpFilter={props.setLfpFilter}
-                    onClose={() => setLfpOpen(false)}
-                    t={t}
-                  />
-                )}
-              </>
-            )}
-          </div>
-        );
-      })}
+          {isMpas && lfpOpen && (
+            <LfpPopover
+              lfpFilter={props.lfpFilter}
+              setLfpFilter={props.setLfpFilter}
+              onClose={() => setLfpOpen(false)}
+              t={t}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }

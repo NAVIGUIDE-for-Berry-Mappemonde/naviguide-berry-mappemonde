@@ -37,9 +37,9 @@ export const ATTRIBUTIONS = {
     name:  "© OpenSeaMap contributors",
     href:  "https://www.openseamap.org",
   },
-  // Blue Intelligence Projects (source à confirmer)
+  // Blue Intelligence Projects
   projects: {
     name:  "Blue Intelligence Projects",
-    href:  "https://oceanfdn.org",
+    href:  "https://www.blueintelligence.online",
   },
 };

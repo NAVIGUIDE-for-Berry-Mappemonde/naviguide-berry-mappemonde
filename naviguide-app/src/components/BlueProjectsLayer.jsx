@@ -20,8 +20,9 @@
  */
 
 import { useEffect, useState } from "react";
-import { Source, Layer, Popup } from "react-map-gl/maplibre";
+import { Source, Layer } from "react-map-gl/maplibre";
 import { useLang } from "../i18n/LangContext.jsx";
+import { MapPopup } from "./ui/MapPopup.jsx";
 
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 const DATA_URL = "/data/blue_intelligence_projects.geojson";
@@ -134,49 +135,67 @@ export function BlueProjectsLayer({ show, data, onFeatureClick }) {
 /**
  * Popup component — controlled from App.jsx (uses state).
  * Props: { feature: {lng, lat, properties}, onClose }.
+ * Uses shared MapPopup shell (white background, scrollable body).
  */
 export function BlueProjectsPopup({ feature, onClose }) {
   const { t } = useLang();
+  const [imgError, setImgError] = useState(false);
+
+  // Reset image error state when a different feature is selected
+  useEffect(() => { setImgError(false); }, [feature?.lng, feature?.lat]);
+
   if (!feature) return null;
   const p = feature.properties || {};
-  const desc = (p.description || "").trim();
-  const shortDesc = desc.length > 260 ? desc.slice(0, 257) + "…" : desc;
+  const showImage = p.image && !imgError;
 
   return (
-    <Popup
-      longitude={feature.lng}
-      latitude={feature.lat}
+    <MapPopup
+      lng={feature.lng}
+      lat={feature.lat}
+      title={p.title || "Project"}
+      accentColor={PROJECTS_COLOR}
       onClose={onClose}
-      closeOnClick={false}
-      anchor="top"
-      maxWidth="320px"
+      maxWidth={360}
     >
-      <div className="text-slate-800">
-        <div className="font-semibold text-sm mb-1 leading-tight">{p.title || "Project"}</div>
-        {p.category && (
-          <div className="inline-block bg-teal-100 text-teal-800 text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide mb-1.5">
-            {p.category}
-          </div>
-        )}
-        {shortDesc && (
-          <p className="text-xs text-slate-600 leading-snug mb-1.5">{shortDesc}</p>
-        )}
-        {p.funder && (
-          <div className="text-[11px] text-slate-500 mb-1">
-            <span className="font-medium">Funder :</span> {p.funder}
-          </div>
-        )}
-        {p.url && (
-          <a
-            href={p.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-teal-700 hover:text-teal-900 text-xs font-medium underline underline-offset-2"
-          >
-            {t("projectsSeeMore") || "See project ↗"}
-          </a>
-        )}
-      </div>
-    </Popup>
+      {showImage && (
+        <img
+          src={p.image}
+          alt=""
+          loading="lazy"
+          onError={() => setImgError(true)}
+          className="w-full rounded-lg mb-2"
+          style={{ height: 120, objectFit: "cover" }}
+        />
+      )}
+
+      {p.category && (
+        <div className="inline-block bg-teal-100 text-teal-800 text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide mb-1.5">
+          {p.category}
+        </div>
+      )}
+
+      {p.description && (
+        <p className="text-xs text-slate-600 leading-snug mb-2 whitespace-pre-line">
+          {p.description}
+        </p>
+      )}
+
+      {p.funder && (
+        <div className="text-[11px] text-slate-500 mb-1.5">
+          <span className="font-medium text-slate-700">Funder :</span> {p.funder}
+        </div>
+      )}
+
+      {p.url && (
+        <a
+          href={p.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-teal-700 hover:text-teal-900 text-xs font-medium underline underline-offset-2"
+        >
+          {t("projectsSeeMore") || "See project ↗"}
+        </a>
+      )}
+    </MapPopup>
   );
 }
