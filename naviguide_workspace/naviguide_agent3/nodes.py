@@ -29,6 +29,10 @@ from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage
 
 from .state import RiskState
+from .risk_engine import RiskAssessmentEngine
+
+# Singleton engine — shared across all node invocations (mirrors agent1/_router)
+_engine = RiskAssessmentEngine()
 
 # ── Groq (primary) + OpenRouter (fallback) ────────────────────────────────────
 _GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
