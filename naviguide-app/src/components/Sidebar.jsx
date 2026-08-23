@@ -551,7 +551,7 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
           ${isOffshore
             ? "w-12 h-12 border-2 border-sky-400/70 shadow-sky-900/40"
             : "w-9 h-9 border border-slate-700"}
-          ${open ? "left-[322px]" : "left-4"}`}
+          ${open ? "left-[362px]" : "left-4"}`}
         title={open ? t("hideSidebar") : t("showExpeditionPanel")}
       >
         {open
@@ -567,7 +567,7 @@ export function Sidebar({ plan, open, onToggle, onRouteImport, onRouteSwitchToBe
             ? "border-r-2 border-sky-400/40"
             : "border-r border-slate-700/60"}
           ${open ? "translate-x-0" : "-translate-x-full"}`}
-        style={{ width: 320 }}
+        style={{ width: 360 }}
       >
 
         {/* ── Brand header ─────────────────────────────────────────────── */}

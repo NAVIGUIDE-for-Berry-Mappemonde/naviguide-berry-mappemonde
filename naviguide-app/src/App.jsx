@@ -19,6 +19,7 @@ import { CatamaranMarker } from "./components/CatamaranMarker";
 import { useLegContext } from "./hooks/useLegContext";
 import { ProtectedSeasLayer } from "./components/ProtectedSeasLayer";
 import { BlueProjectsLayer, BlueProjectsPopup, useBlueProjectsData } from "./components/BlueProjectsLayer";
+import { PortsPopup } from "./components/PortsPopup";
 import { MapAttribution } from "./components/MapAttribution";
 import { MapPopup } from "./components/ui/MapPopup";
 
@@ -108,6 +109,7 @@ export default function App() {
   // ── Blue Intelligence Projects — lazy data fetch (only when toggle ON) ─────
   const blueProjects = useBlueProjectsData(maritimeLayers.showProjects);
   const [projectPopup, setProjectPopup] = useState(null);   // {lng, lat, properties}
+  const [portPopup, setPortPopup] = useState(null);         // {lng, lat, properties}
 
   // ── Simulation mode — catamaran draggable ────────────────────────────────────
   const [simulationMode, setSimulationMode] = useState(false);
@@ -874,7 +876,7 @@ export default function App() {
         dragRotate={false}
         touchZoomRotate={false}
         cursor={drawingMode ? "crosshair" : routeCursor}
-        interactiveLayerIds={drawingMode ? [] : ["maritime-layer", "blue-projects-points", "blue-projects-clusters"]}
+        interactiveLayerIds={drawingMode ? [] : ["maritime-layer", "blue-projects-points", "blue-projects-clusters", "ports-circle"]}
         onClick={(e) => {
           if (drawingMode) { handleDrawingClick(e); return; }
           // Blue Projects click detection
@@ -895,6 +897,16 @@ export default function App() {
             if (map) {
               map.easeTo({ center: cluster.geometry.coordinates, zoom: Math.min(12, map.getZoom() + 2) });
             }
+            return;
+          }
+          // Ports click detection (WPI dots) — minimal popup: name + country
+          const port = features.find(f => f.layer?.id === "ports-circle");
+          if (port) {
+            setPortPopup({
+              lng: port.geometry.coordinates[0],
+              lat: port.geometry.coordinates[1],
+              properties: port.properties,
+            });
             return;
           }
           handleRouteClick(e);
@@ -946,6 +958,12 @@ export default function App() {
         <BlueProjectsPopup
           feature={projectPopup}
           onClose={() => setProjectPopup(null)}
+        />
+
+        {/* ── Ports (WPI) minimal popup — name + country ────────────────── */}
+        <PortsPopup
+          port={portPopup}
+          onClose={() => setPortPopup(null)}
         />
 
         {/* ── Maritime data layers (ZEE / Ports / Balisage) — AVANT les routes pour être en dessous ── */}

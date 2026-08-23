@@ -96,6 +96,100 @@ app.add_middleware(
 orchestrator = build_orchestrator()
 log.info("Multi-Agent Orchestrator compiled and ready.")
 
+# ── Berry-Mappemonde plan cache ──────────────────────────────────────────────
+# Simple TTL cache to serve the pre-configured expedition plan sub-second on
+# the second+ page-load. Populated by both the warm-up task at startup and
+# by every real /plan/berry-mappemonde call.
+#
+# Key = (language, expedition_id, departure_month). Value = (timestamp, body).
+# TTL: BERRY_PLAN_CACHE_TTL_S env var, defaults to 3600 (1h). Set to 0 to
+# disable caching entirely.
+import time as _time_mod
+BERRY_PLAN_CACHE_TTL_S = int(os.getenv("BERRY_PLAN_CACHE_TTL_S", "3600"))
+_berry_plan_cache: dict = {}   # {key_tuple: (unix_ts, response_dict)}
+
+def _cache_get(key):
+    if BERRY_PLAN_CACHE_TTL_S <= 0:
+        return None
+    entry = _berry_plan_cache.get(key)
+    if not entry:
+        return None
+    ts, body = entry
+    if (_time_mod.time() - ts) > BERRY_PLAN_CACHE_TTL_S:
+        _berry_plan_cache.pop(key, None)
+        return None
+    return body
+
+def _cache_set(key, body):
+    if BERRY_PLAN_CACHE_TTL_S <= 0:
+        return
+    _berry_plan_cache[key] = (_time_mod.time(), body)
+
+
+# ── Startup warm-up ──────────────────────────────────────────────────────────
+# The very first Berry-Mappemonde plan takes 40-90s (LangGraph compile +
+# Copernicus cold-start + OpenRouter model probe + LLM briefing generation).
+# We fire an off-the-clock warm-up plan build in the background so that when
+# the frontend hits the endpoint on user page-load, the LLM/route caches are
+# already populated and the response is sub-10s.
+#
+# Env var control:
+#   WARMUP_ORCHESTRATOR=1 (default) → warm-up ON at startup
+#   WARMUP_ORCHESTRATOR=0           → skip (useful for dev restart loops)
+@app.on_event("startup")
+async def _warmup_expedition_plan() -> None:
+    import asyncio as _asyncio
+    import time as _time
+
+    if os.getenv("WARMUP_ORCHESTRATOR", "1").strip() != "1":
+        log.info("[startup] warm-up disabled via WARMUP_ORCHESTRATOR=0")
+        return
+
+    async def _run_warmup() -> None:
+        # Give uvicorn + downstream services (naviguide-api on :8001) time
+        # to bind their ports so the LangGraph node HTTP calls don't fail.
+        await _asyncio.sleep(8.0)
+        t0 = _time.monotonic()
+        log.info("[startup] warming up expedition plan (background)...")
+        try:
+            state = _initial_state(
+                waypoints     = BERRY_MAPPEMONDE_WAYPOINTS,
+                vessel_specs  = BerryMappemondeRouter.VESSEL_PROFILE,
+                constraints   = {
+                    "mandatory_cape_of_good_hope": True,
+                    "no_suez_canal":               True,
+                    "east_to_west_atlantic":       True,
+                    "spm_decoupled_leg":           True,
+                },
+                language      = "fr",
+                expedition_id = "berry-mappemonde-2026",
+            )
+            # orchestrator.invoke() is blocking — run in threadpool so uvicorn
+            # keeps servicing real requests while we warm up.
+            result = await _asyncio.to_thread(orchestrator.invoke, state)
+            dt = _time.monotonic() - t0
+            log.info(
+                f"[startup] warm-up complete in {dt:.1f}s "
+                f"(status={result.get('status', '?')}, "
+                f"risk={result.get('expedition_risk_level', '?')})"
+            )
+            # Populate the plan cache so the first user page-load returns sub-second.
+            _cache_set(
+                ("fr", "berry-mappemonde-2026", None),
+                {
+                    "status":          result["status"],
+                    "expedition_plan": result["expedition_plan"],
+                    "errors":          result.get("errors", []),
+                },
+            )
+            log.info("[startup] warm-up cached under key=('fr','berry-mappemonde-2026',None)")
+        except Exception as exc:  # noqa: BLE001
+            dt = _time.monotonic() - t0
+            log.warning(f"[startup] warm-up failed after {dt:.1f}s (non-fatal): {exc}")
+
+    # Fire-and-forget: never block server startup.
+    _asyncio.create_task(_run_warmup())
+
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
@@ -224,6 +318,15 @@ async def plan_berry_mappemonde(body: BerryPlanRequest = None):
     """
     language       = (body.language       if body and body.language       else "en")
     departure_month = (body.departure_month if body and body.departure_month else None)
+    expedition_id  = body.expedition_id if body else "berry-mappemonde-2026"
+
+    # Cache first — returns instantly if a warm-up or previous request populated it.
+    cache_key = (language, expedition_id, departure_month)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        log.info(f"Berry-Mappemonde plan CACHE HIT (lang={language}, dep_month={departure_month})")
+        return cached
+
     log.info(f"Berry-Mappemonde plan requested. language={language} departure_month={departure_month}")
 
     constraints = {
@@ -240,17 +343,19 @@ async def plan_berry_mappemonde(body: BerryPlanRequest = None):
         vessel_specs  = BerryMappemondeRouter.VESSEL_PROFILE,
         constraints   = constraints,
         language      = language,
-        expedition_id = body.expedition_id if body else "berry-mappemonde-2026",
+        expedition_id = expedition_id,
     )
 
     try:
         result = orchestrator.invoke(state)
         log.info(f"Berry-Mappemonde complete: status={result['status']}, risk={result['expedition_risk_level']}")
-        return {
+        response = {
             "status":          result["status"],
             "expedition_plan": result["expedition_plan"],
             "errors":          result.get("errors", []),
         }
+        _cache_set(cache_key, response)
+        return response
     except Exception as exc:
         log.error(f"Berry-Mappemonde orchestrator error: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))

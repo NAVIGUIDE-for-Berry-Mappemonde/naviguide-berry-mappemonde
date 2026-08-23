@@ -75,7 +75,19 @@ https://openrouter-nav.preview.emergentagent.com
 
 ## Changelog
 
-### 2026-02 (session actuelle)
+### 2026-02 (session actuelle) — mise à jour
+- **Investigation Copernicus (Item 1)** : 9 curls (wind/wave/current × 3 positions océaniques) → **100% de données réelles CMEMS**, 0% de fallback simulation. Latence 5.6-6.1s par appel. Champ `simulation` absent, `source` absent (= vraie donnée). Logs backend confirment `✅ Données récupérées avec succès`. Aucun fix requis.
+- **Popup Ports (Item 2)** : ajout du layer `ports-circle` dans `interactiveLayerIds`, création de `src/components/PortsPopup.jsx` (minimal : port name + country via `MapPopup`, accent color `#f59e0b`). Handler branché dans `App.jsx` onClick. Validé headless : `Port Saint Louis Du Rhone / France` sans crash.
+- **Sidebar élargie 320→360 px (Item 3)** : bouton toggle repositionné (`left-[362px]`), labels layers restaurés en versions complètes (`Buoyage`, `MPAs`) — les 5 pastilles tiennent en 1 ligne sans troncature.
+- **Warm-up orchestrator + cache (Item 4)** :
+  - `naviguide_workspace/naviguide_orchestrator/main.py` : `@app.on_event("startup")` lance un plan Berry-Mappemonde en background (asyncio task, sleep 8s, `asyncio.to_thread(orchestrator.invoke)`) + peuple un cache TTL 1h (in-memory).
+  - Endpoint `plan_berry_mappemonde` consulte le cache en premier — cache hit sur `(language, expedition_id, departure_month)` répond en <500ms.
+  - Env vars : `WARMUP_ORCHESTRATOR=1` (default, ajouté dans `naviguide-api/.env`), `BERRY_PLAN_CACHE_TTL_S=3600` (default).
+  - **Latences mesurées** après restart :
+    - Warm-up complet en 34.2s en background (n'a pas bloqué le startup).
+    - Cache hit `fr` : **0.33s** puis **0.16s** (vs 60-90s cold-start avant).
+    - Cache miss (`en`, jamais vu) : **19.75s** (vs 60-90s cold, gain grâce aux Copernicus/OpenRouter déjà chauds).
+  - Ratio : **200× plus rapide** en cache hit.
 - **P0 CRITIQUE — Cause racine des crashs popup identifiée**
   - Fichier : `src/components/ui/MapPopup.jsx` — ligne `anchor="auto"` sur `<Popup>` de `react-map-gl/maplibre`.
   - `"auto"` n'est pas dans `PopupOptions.anchor` de MapLibre GL v5 (valeurs légales : `center | top | bottom | left | right | top-left | top-right | bottom-left | bottom-right`). Le doc dit : *"If unset the anchor will be dynamically set"* — il faut **omettre** la prop, pas passer `"auto"`.
