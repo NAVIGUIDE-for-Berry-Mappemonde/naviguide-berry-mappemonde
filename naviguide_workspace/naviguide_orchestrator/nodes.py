@@ -29,26 +29,15 @@ import json
 import httpx
 from langchain_core.messages import HumanMessage, AIMessage
 
-# ── Groq (primary) + OpenRouter (fallback) ────────────────────────────────────
-_GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
-_GROQ_MODEL    = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
-_GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
-
-_OR_API_KEY    = os.getenv("OPENROUTER_API_KEY", "")
-_OR_BASE_URL   = "https://openrouter.ai/api/v1/chat/completions"
-_OR_HEADERS    = {"HTTP-Referer": "http://localhost:5173", "X-Title": "NAVIGUIDE"}
-_OR_MODELS     = [
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "google/gemma-4-31b-it:free",
-]
-_FALLBACK_STATUSES = {429, 503}
-
-
-def _call_openrouter(prompt: str, max_tokens: int = 1024):
+def _call_openrouter(prompt: str, max_tokens: int = 1200, language: str = "fr"):
+    """
+    Call OpenRouter with language-aware system prompt.
+    language: 'fr' (default) or 'en' — controls system message AND briefing language.
+    Returns the LLM content string, or None on total failure.
+    """
     import os
     import json
     import urllib.request
-    import re
     from pathlib import Path
     from dotenv import load_dotenv
 
@@ -65,7 +54,7 @@ def _call_openrouter(prompt: str, max_tokens: int = 1024):
         "meta-llama/llama-3.1-8b-instruct:free",
         "google/gemma-2-9b-it:free",
         "qwen/qwen-2.5-72b-instruct:free",
-        "mistralai/mistral-7b-instruct:free"
+        "mistralai/mistral-7b-instruct:free",
     ]
 
     try:
@@ -79,39 +68,59 @@ def _call_openrouter(prompt: str, max_tokens: int = 1024):
     except Exception as e:
         print(f"⚠️ ORCHESTRATEUR: Impossible de lister les modèles: {e}")
 
+    # ── Language-aware system prompt ───────────────────────────────────────────
+    if language == "en":
+        system_content = (
+            "You are the NAVIGUIDE Expedition Director, expert in offshore circumnavigations. "
+            "Write a complete, ultra-professional skipper briefing in English. "
+            "Do NOT show any internal reasoning or text in French."
+        )
+    else:
+        system_content = (
+            "Tu es le Directeur d'Expédition NAVIGUIDE, expert en circumnavigations hauturières. "
+            "Rédige un briefing skipper complet, ultra-professionnel en français. "
+            "Ne montre AUCUNE réflexion interne ni texte en anglais."
+        )
+
     messages = [
-        {"role": "system", "content": "Tu es le Directeur d'Expédition NAVIGUIDE. Rédige un briefing hauturier complet, ultra-professionnel et direct en français. Ne montre AUCUNE réflexion interne ni texte en anglais."},
-        {"role": "user", "content": prompt}
+        {"role": "system", "content": system_content},
+        {"role": "user",   "content": prompt},
     ]
 
     for model in models_to_try[:6]:
         try:
-            print(f"🔄 ORCHESTRATEUR: Tentative via {model}...")
+            print(f"🔄 ORCHESTRATEUR: Tentative via {model} (lang={language})...")
             req = urllib.request.Request(
                 "https://openrouter.ai/api/v1/chat/completions",
                 data=json.dumps({
-                    "model": model,
+                    "model":    model,
                     "messages": messages,
                     "max_tokens": max_tokens,
-                    "provider": {"data_collection": "allow"}
+                    "provider": {"data_collection": "allow"},
                 }).encode("utf-8"),
                 headers={
                     "Authorization": f"Bearer {key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:5173"
-                }
+                    "Content-Type":  "application/json",
+                    "HTTP-Referer":  "http://localhost:5173",
+                    "X-Title":       "NAVIGUIDE",
+                },
             )
             with urllib.request.urlopen(req, timeout=45) as resp:
                 res = json.loads(resp.read().decode("utf-8"))
                 if "choices" in res and len(res["choices"]) > 0:
                     content = res["choices"][0]["message"].get("content") or ""
-                    lines_clean = [l for l in content.splitlines() if "thinking process" not in l.lower()]
+                    # Strip internal reasoning lines (some models leak them)
+                    lines_clean = [
+                        l for l in content.splitlines()
+                        if "thinking process" not in l.lower()
+                        and "<think>" not in l.lower()
+                    ]
                     content = "\n".join(lines_clean).strip()
                     if content:
-                        print(f"✅ ORCHESTRATEUR: Briefing généré en direct par OpenRouter ({model}) !")
+                        print(f"✅ ORCHESTRATEUR: Briefing généré via {model} (lang={language}) !")
                         return content
         except Exception as e:
-            err_msg = e.read().decode('utf-8') if hasattr(e, 'read') else str(e)
+            err_msg = e.read().decode("utf-8") if hasattr(e, "read") else str(e)
             print(f"❌ ORCHESTRATEUR: Échec sur {model} -> {err_msg[:120]}")
             continue
 
@@ -186,9 +195,16 @@ def run_route_intelligence_node(state: OrchestratorState) -> OrchestratorState:
     """
     log.info("[orchestrator] Running Agent 1 — Route Intelligence")
 
+    # Resolve vessel profile — lazy import avoids hard dependency at module load
+    try:
+        from naviguide_agent1.router import BerryMappemondeRouter as _Router
+        _vessel_profile = _Router.VESSEL_PROFILE
+    except Exception:
+        _vessel_profile = {"avg_speed_knots": 10.0, "coastal_buffer_nm": 2}
+
     initial_a1 = {
         "waypoints":            state["waypoints"],
-        "vessel_specs":         state.get("vessel_specs") or BerryMappemondeRouter.VESSEL_PROFILE,
+        "vessel_specs":         state.get("vessel_specs") or _vessel_profile,
         "constraints":          state.get("constraints", {}),
         "raw_segments":         [],
         "anti_shipping_scores": [],
@@ -236,6 +252,83 @@ def run_route_intelligence_node(state: OrchestratorState) -> OrchestratorState:
             "status":        "agent1_failed",
             "messages":      [msg],
         }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# NODE 2b — agent1_fallback (injected when Agent 1 completely fails)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Official Berry-Mappemonde 18-waypoint reference (36 484 nm)
+_BERRY_FALLBACK_WAYPOINTS = [
+    {"name": "La Rochelle",                             "lat":  46.1591, "lon":  -1.1520, "mandatory": True},
+    {"name": "Ajaccio (Corse)",                         "lat":  41.9192, "lon":   8.7386, "mandatory": True},
+    {"name": "Îles Canaries",                           "lat":  28.5521, "lon": -16.1529, "mandatory": True},
+    {"name": "Fort-de-France (Martinique)",             "lat":  14.6037, "lon": -61.0731, "mandatory": True},
+    {"name": "Pointe-à-Pitre (Guadeloupe)",             "lat":  16.2415, "lon": -61.5331, "mandatory": True},
+    {"name": "Gustavia (Saint-Barthélemy)",             "lat":  17.8962, "lon": -62.8498, "mandatory": True},
+    {"name": "Marigot (Saint-Martin)",                  "lat":  18.0679, "lon": -63.0822, "mandatory": True},
+    {"name": "Halifax (Nouvelle-Écosse)",               "lat":  44.6488, "lon": -63.5752, "mandatory": True},
+    {"name": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "lat":  46.7811, "lon": -56.1778, "mandatory": True},
+    {"name": "Cayenne (Guyane française)",              "lat":   4.9333, "lon": -52.3333, "mandatory": True},
+    {"name": "Papeete (Polynésie française)",           "lat": -17.5516, "lon":-149.5585, "mandatory": True},
+    {"name": "Mata-Utu (Wallis-et-Futuna)",             "lat": -13.2825, "lon":-176.1736, "mandatory": True},
+    {"name": "Nouméa (Nouvelle-Calédonie)",             "lat": -22.2758, "lon": 166.4572, "mandatory": True},
+    {"name": "Dzaoudzi (Mayotte)",                      "lat": -12.7871, "lon":  45.2750, "mandatory": True},
+    {"name": "Tromelin (TAAF)",                         "lat": -15.8900, "lon":  54.5200, "mandatory": True},
+    {"name": "Saint-Gilles (La Réunion)",               "lat": -21.0594, "lon":  55.2242, "mandatory": True},
+    {"name": "Europa (TAAF)",                           "lat": -22.3635, "lon":  40.3476, "mandatory": True},
+    {"name": "La Rochelle (retour)",                    "lat":  46.1591, "lon":  -1.1520, "mandatory": True},
+]
+
+
+def agent1_fallback_node(state: OrchestratorState) -> OrchestratorState:
+    """
+    Fallback when Agent 1 completely fails.
+    Injects the official Berry-Mappemonde 18-waypoint reference route (36 484 nm)
+    so the pipeline can continue to Agent 3 and produce a valid briefing.
+    No graph polylines are available; Agent 3 works from waypoint coordinates.
+    """
+    log.warning(
+        "[orchestrator] Agent 1 unavailable — "
+        "injecting Berry-Mappemonde reference route (36 484 nm). "
+        "Continuing to risk assessment."
+    )
+
+    fallback_route_plan = {
+        "type": "FeatureCollection",
+        "metadata": {
+            "total_distance_nm":       36484.0,
+            "total_segments":          17,
+            "anti_shipping_avg_score": 0.0,
+            "source":                  "fallback",
+            "note": (
+                "Agent 1 unavailable — "
+                "Berry-Mappemonde reference route injected."
+            ),
+        },
+        "features": [],   # no detailed polylines; Agent 3 works from waypoints
+    }
+
+    # Preserve validated waypoints already in state; fall back to canonical 18-stop list
+    waypoints = state.get("waypoints") or _BERRY_FALLBACK_WAYPOINTS
+
+    msg = AIMessage(
+        content=(
+            "[agent1_fallback] ⚠️ Agent 1 unavailable — "
+            "Berry-Mappemonde reference route injected (36 484 nm). "
+            "Continuing to risk assessment."
+        )
+    )
+    return {
+        **state,
+        "waypoints":         waypoints,
+        "route_plan":        fallback_route_plan,
+        "anti_shipping_avg": 0.0,
+        "agent1_status":     "fallback",
+        "agent1_errors":     state.get("agent1_errors", []),
+        "status":            "running_a3",
+        "messages":          [msg],
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -312,44 +405,123 @@ def run_risk_assessment_node(state: OrchestratorState) -> OrchestratorState:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def llm_expedition_briefing_node(state: OrchestratorState) -> OrchestratorState:
-    """Génère le briefing exécutif via OpenRouter."""
-    waypoints = state.get("waypoints", [])
-    total_nm = state.get("total_nm", 0)
-    risk_level = state.get("risk_level", "LOW")
-    critical_alerts = state.get("critical_alerts", [])
-    isolated_med = state.get("isolated_medical", [])
-    matrix = state.get("risk_matrix", [])
-    lang = state.get("language", "fr")
+    """
+    Generate unified executive skipper briefing combining Agent 1 + Agent 3 outputs.
+    Language follows state["language"] ('fr' | 'en') — injected into both system
+    prompt and user prompt so the briefing is always in the correct UI language.
 
-    prompt = f"""BERRY-MAPPEMONDE EXPEDITION BRIEFING
-Escales: {len(waypoints)} | Distance totale: {total_nm:.0f} nm | Niveau de risque global: {risk_level}
+    Data is drawn from the correct state paths:
+      - total_nm       : state["route_plan"]["metadata"]["total_distance_nm"]
+      - risk_level     : state["expedition_risk_level"]
+      - critical_alerts: state["risk_report"]["critical_alerts"]
+      - isolated_med   : state["risk_report"]["detail"]["medical_access"]
+      - risk_matrix    : state["risk_report"]["risk_matrix"]
+    """
+    lang            = state.get("language", "fr")
+    lang_en         = lang == "en"
+    waypoints       = state.get("waypoints", [])
 
-Alertes critiques: {critical_alerts}
-Zones médicales isolées: {isolated_med}
+    # ── Extract route data from correct state paths ────────────────────────────
+    route_plan  = state.get("route_plan", {})
+    route_meta  = route_plan.get("metadata", {}) if isinstance(route_plan, dict) else {}
+    total_nm    = route_meta.get("total_distance_nm") or 0.0
 
-Rédige un briefing skipper structuré en français avec EXACTEMENT ces 4 sections:
+    # ── Extract risk data from risk_report (set by run_risk_assessment_node) ───
+    risk_report     = state.get("risk_report", {})
+    risk_metadata   = risk_report.get("metadata", {})
+    critical_alerts = risk_report.get("critical_alerts", [])
+    risk_matrix     = risk_report.get("risk_matrix", [])
+    detail          = risk_report.get("detail", {})
+    medical_list    = detail.get("medical_access", [])
+
+    # risk_level from orchestrator state (set by run_risk_assessment_node)
+    risk_level = state.get("expedition_risk_level") or risk_metadata.get("expedition_risk_level", "MODERATE")
+
+    # Guard: if route produced 0 nm (agent failed), use expedition default
+    if total_nm == 0:
+        total_nm = 36484.0  # Berry-Mappemonde reference distance
+
+    # ── Build concise risk summary for the prompt ──────────────────────────────
+    sorted_matrix = sorted(risk_matrix, key=lambda x: x.get("overall", 0), reverse=True)
+
+    alert_lines = "\n".join(
+        f"  • {a['waypoint']} [{a['risk_level']}] — risque dominant: {a.get('dominant_risk', 'composite')}"
+        for a in critical_alerts[:5]
+    ) or ("  • No critical alerts detected." if lang_en else "  • Aucune alerte critique détectée.")
+
+    isolated_med = [
+        f"  • {m['name']}: {m.get('medevac_hours', '?')}h medevac"
+        for m in medical_list if m.get("medevac_hours", 0) >= 48
+    ]
+    med_lines = "\n".join(isolated_med[:4]) or (
+        "  • Medical access acceptable on full route." if lang_en
+        else "  • Accès médical acceptable sur l'ensemble du tracé."
+    )
+
+    crit_count = risk_metadata.get("critical_stops_count", len([a for a in critical_alerts if a.get("risk_level") == "CRITICAL"]))
+    high_count = risk_metadata.get("high_risk_stops_count", len([a for a in critical_alerts if a.get("risk_level") == "HIGH"]))
+
+    # ── Build language-appropriate prompt ─────────────────────────────────────
+    if lang_en:
+        prompt = f"""BERRY-MAPPEMONDE EXPEDITION — FULL RISK PROFILE
+═══════════════════════════════════════════════════════
+Stops: {len(waypoints)} | Distance: {total_nm:,.0f} nm | Overall risk: {risk_level}
+CRITICAL stops: {crit_count} | HIGH stops: {high_count}
+
+CRITICAL/HIGH ALERTS:
+{alert_lines}
+
+CRITICAL MEDICAL ACCESS (medevac ≥48h):
+{med_lines}
+
+Write a skipper briefing with EXACTLY these 4 sections:
+1. EXECUTIVE SUMMARY (2-3 sentences)
+2. TOP CRITICAL RISKS (max 4 bullets, each with one concrete mitigation)
+3. WEATHER WINDOWS BY BASIN (1 sentence per ocean basin)
+4. NON-NEGOTIABLE SAFETY REQUIREMENTS (3 bullets)
+
+Professional offshore tone, concise. Max 280 words. Write entirely in English."""
+    else:
+        prompt = f"""EXPÉDITION BERRY-MAPPEMONDE — PROFIL DE RISQUE COMPLET
+═══════════════════════════════════════════════════════
+Escales: {len(waypoints)} | Distance: {total_nm:,.0f} nm | Risque global: {risk_level}
+Escales CRITICAL: {crit_count} | Escales HIGH: {high_count}
+
+ALERTES CRITIQUES/HIGH:
+{alert_lines}
+
+ACCÈS MÉDICAL CRITIQUE (medevac ≥48h):
+{med_lines}
+
+Rédige un briefing skipper avec EXACTEMENT ces 4 sections:
 1. RÉSUMÉ EXÉCUTIF (2-3 phrases)
-2. TOP RISQUES CRITIQUES (max 4 puces)
-3. FENÊTRES MÉTÉO PAR BASSIN (1 phrase/bassin)
+2. TOP RISQUES CRITIQUES (max 4 puces, chacune avec une mitigation concrète)
+3. FENÊTRES MÉTÉO PAR BASSIN (1 phrase par bassin océanique)
 4. EXIGENCES NON NÉGOCIABLES (3 puces)
 
-Ton: professionnel hauturier, concis. Pas de réflexion interne ni de texte en anglais."""
+Ton professionnel hauturier, concis. Max 280 mots. Rédige entièrement en français."""
 
-    briefing = _call_openrouter(prompt, max_tokens=800)
+    briefing = _call_openrouter(prompt, max_tokens=800, language=lang)
 
     if not briefing:
-        print("⚠️ OpenRouter indisponible dans le nœud, déclenchement du fallback.")
+        log.warning("[orchestrator] OpenRouter unavailable — using fallback briefing")
         briefing = _build_fallback_briefing(
             risk_level=risk_level,
             critical_alerts=critical_alerts,
             total_nm=total_nm,
             waypoint_count=len(waypoints),
-            sorted_matrix=matrix,
+            sorted_matrix=sorted_matrix,
             isolated_medical=isolated_med,
             language=lang,
         )
 
-    return {"executive_briefing": briefing}
+    msg = AIMessage(content=f"[llm_briefing] ✅ Briefing generated ({len(briefing)} chars, lang={lang})")
+    return {
+        **state,
+        "executive_briefing": briefing,
+        "status":             "generating_plan",
+        "messages":           [msg],
+    }
 def _build_fallback_briefing(
     risk_level: str,
     critical_alerts: list,
@@ -450,6 +622,8 @@ def generate_expedition_plan_node(state: OrchestratorState) -> OrchestratorState
     # Compute voyage statistics
     route_meta   = route_plan.get("metadata", {}) if isinstance(route_plan, dict) else {}
     total_nm     = route_meta.get("total_distance_nm", 0)
+    # Guard: never 0 or None — always ≥ Berry-Mappemonde reference distance
+    total_nm     = total_nm or 36484.0
     total_segs   = route_meta.get("total_segments", max(0, len(waypoints) - 1))
     anti_avg     = state.get("anti_shipping_avg", route_meta.get("anti_shipping_avg_score", 0))
     risk_level   = state.get("expedition_risk_level", "UNKNOWN")
@@ -527,15 +701,20 @@ def generate_expedition_plan_node(state: OrchestratorState) -> OrchestratorState
         })
 
     expedition_plan = {
+        # ── Top-level fields expected by the frontend ──────────────────────────
         "executive_briefing": state.get("executive_briefing", ""),
+        "total_nm":           total_nm,           # always a float, never None/0 after briefing node
+        "risk_level":         risk_level,          # always a string (CRITICAL/HIGH/MODERATE/LOW)
+        "waypoints":          waypoints,           # full list for map rendering
+        # ── Nested statistics ──────────────────────────────────────────────────
         "voyage_statistics": {
-            "total_distance_nm":     total_nm,
-            "total_segments":        total_segs,
-            "expedition_risk_level": risk_level,
+            "total_distance_nm":       total_nm,
+            "total_segments":          total_segs,
+            "expedition_risk_level":   risk_level,
             "overall_expedition_risk": overall_risk,
-            "anti_shipping_avg":     anti_avg,
-            "high_risk_count":       high_count,
-            "critical_count":        crit_count,
+            "anti_shipping_avg":       anti_avg,
+            "high_risk_count":         high_count,
+            "critical_count":          crit_count,
         },
         "critical_alerts": sidebar_alerts,
         "unified_geojson":  unified_geojson,

@@ -9,6 +9,7 @@ from .state import OrchestratorState
 from .nodes import (
     validate_expedition_request_node,
     run_route_intelligence_node,
+    agent1_fallback_node,
     run_risk_assessment_node,
     llm_expedition_briefing_node,
     generate_expedition_plan_node,
@@ -21,7 +22,7 @@ def _after_validate(state: OrchestratorState) -> str:
 
 
 def _after_agent1(state: OrchestratorState) -> str:
-    """Abort if Agent 1 failed completely."""
+    """Route to fallback if Agent 1 completely failed, otherwise continue normally."""
     return "failed" if state.get("status") == "agent1_failed" else "ok"
 
 
@@ -40,11 +41,12 @@ def build_orchestrator():
     graph = StateGraph(OrchestratorState)
 
     # Register nodes
-    graph.add_node("validate",       validate_expedition_request_node)
-    graph.add_node("agent1",         run_route_intelligence_node)
-    graph.add_node("agent3",         run_risk_assessment_node)
-    graph.add_node("briefing",       llm_expedition_briefing_node)
-    graph.add_node("generate_plan",  generate_expedition_plan_node)
+    graph.add_node("validate",         validate_expedition_request_node)
+    graph.add_node("agent1",           run_route_intelligence_node)
+    graph.add_node("agent1_fallback",  agent1_fallback_node)
+    graph.add_node("agent3",           run_risk_assessment_node)
+    graph.add_node("briefing",         llm_expedition_briefing_node)
+    graph.add_node("generate_plan",    generate_expedition_plan_node)
 
     # Entry point
     graph.set_entry_point("validate")
@@ -56,12 +58,15 @@ def build_orchestrator():
         {"error": END, "ok": "agent1"},
     )
 
-    # Conditional: abort if Agent 1 completely failed
+    # Conditional: inject fallback if Agent 1 completely failed (never terminate early)
     graph.add_conditional_edges(
         "agent1",
         _after_agent1,
-        {"failed": END, "ok": "agent3"},
+        {"failed": "agent1_fallback", "ok": "agent3"},
     )
+
+    # Fallback merges back into the normal pipeline
+    graph.add_edge("agent1_fallback", "agent3")
 
     # Linear continuation
     graph.add_edge("agent3",        "briefing")

@@ -26,24 +26,16 @@ const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL;
 // La Rochelle — position de départ du catamaran en mode simulation
 const LA_ROCHELLE_POS = { lat: 46.1541, lon: -1.167 };
 
-// ── Orchestrator plan cache (localStorage, 24 h TTL, per language) ───────────
-const PLAN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-
+// ── Orchestrator plan cache — DÉSACTIVÉ ──────────────────────────────────────
+// Le briefing LLM se régénère à chaque ouverture / hard refresh pour toujours
+// refléter l'état le plus récent de l'orchestrateur.
 function planCacheKey(lang) { return `naviguide_expedition_plan_v2_${lang}`; }
 
-function getCachedPlan(lang) {
-  try {
-    const raw = localStorage.getItem(planCacheKey(lang));
-    if (!raw) return null;
-    const { data, ts } = JSON.parse(raw);
-    if (Date.now() - ts > PLAN_CACHE_TTL) { localStorage.removeItem(planCacheKey(lang)); return null; }
-    return data;
-  } catch { return null; }
-}
+// Purge any stale cache entries left from a previous build
+try { ["fr", "en"].forEach(l => localStorage.removeItem(planCacheKey(l))); } catch {}
 
-function setCachedPlan(lang, data) {
-  try { localStorage.setItem(planCacheKey(lang), JSON.stringify({ data, ts: Date.now() })); } catch {}
-}
+function getCachedPlan(_lang) { return null; }           // cache désactivé
+function setCachedPlan(_lang, _data) { /* no-op */ }     // cache désactivé
 
 const SEGMENT_BATCH_SIZE = 4; // legs fetched in parallel per batch
 
