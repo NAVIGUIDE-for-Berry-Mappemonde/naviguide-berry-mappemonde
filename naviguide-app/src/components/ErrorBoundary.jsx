@@ -45,8 +45,15 @@ export class ErrorBoundary extends Component {
     const { error, info } = this.state;
     if (!error) return this.props.children;
 
-    // ── DEV: full diagnostic panel ─────────────────────────────────────────
-    if (import.meta.env.DEV) {
+    // Allow ?debug=1 in the URL to force the full dev-style diagnostic panel
+    // even on production builds — useful for triaging user-reported crashes
+    // without redeploying a dev build.
+    const forceDebug =
+      typeof window !== "undefined" &&
+      /[?&]debug=1(?:&|$)/.test(window.location.search);
+
+    // ── DEV or ?debug=1: full diagnostic panel ─────────────────────────────
+    if (import.meta.env.DEV || forceDebug) {
       return (
         <div
           data-testid="error-boundary-dev"

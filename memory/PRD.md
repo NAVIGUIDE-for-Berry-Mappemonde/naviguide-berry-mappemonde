@@ -76,14 +76,25 @@ https://openrouter-nav.preview.emergentagent.com
 ## Changelog
 
 ### 2026-02 (session actuelle)
-- **P0** `ErrorBoundary` global (`src/components/ErrorBoundary.jsx`) : deux modes (dev = stack complet, prod = message minimal + bouton reload). Wrapper posé dans `main.jsx` — empêche les crashs de popups MapLibre de blanchir toute l'app.
+- **P0 CRITIQUE — Cause racine des crashs popup identifiée**
+  - Fichier : `src/components/ui/MapPopup.jsx` — ligne `anchor="auto"` sur `<Popup>` de `react-map-gl/maplibre`.
+  - `"auto"` n'est pas dans `PopupOptions.anchor` de MapLibre GL v5 (valeurs légales : `center | top | bottom | left | right | top-left | top-right | bottom-left | bottom-right`). Le doc dit : *"If unset the anchor will be dynamically set"* — il faut **omettre** la prop, pas passer `"auto"`.
+  - Impact runtime : dans MapLibre `Popup._update`, `let o = this.options.anchor` = `"auto"` (truthy) → le bloc `if (!o) { compute auto }` est skippé → `let r = i.add(a["auto"])` = `i.add(undefined)` → **TypeError: Cannot read properties of undefined (reading 'x')** dans `Point.prototype._add`.
+  - Fix : 1 ligne retirée (`anchor="auto"` supprimé de MapPopup.jsx).
+  - Régression introduite lors du refactor "unification popups" — la valeur `"auto"` a été copiée d'une doc obsolète ou d'un mauvais exemple. Tous les popups (Satellite, MPA, Blue Projects, Draw waypoint) qui utilisaient MapPopup héritaient du bug.
+  - Validation Playwright : Blue Projects popup ("La Tribu Maritime") ✅, MPA popup ("Tunisia EEZ, LFP 1 — Minimal") ✅, Satellite/Point popup via Draw route ✅, tous avec `boundary=0`.
+- **P0** `ErrorBoundary` global (`src/components/ErrorBoundary.jsx`) : deux modes (dev = stack complet, prod = message minimal + bouton reload). Support `?debug=1` pour forcer le mode diagnostic complet en prod build (utile pour triage sans redéployer un dev build). Wrapper posé dans `main.jsx` — empêche les crashs de popups MapLibre de blanchir toute l'app.
 - **P0** Polar chat : bulles utilisateur restent visibles après envoi. Cause : `scrollIntoView()` remontait le conteneur parent (sidebar globale). Fix : `block: "nearest"` + hauteur mini 96 px sur le panneau messages.
 - **P1** Suppression du toggle **Light Mode** (jamais réellement implémenté — seulement un `filter: invert(1)` sur la sidebar). Retiré de `App.jsx`, `ExportSidebar.jsx`, `index.css`.
 - **P1** Suppression du bloc **Getting Started** dans `Sidebar.jsx` + clés i18n associées supprimées.
 - **P1** `MaritimeLayersPanel` : grille 3×2 → **grille 1×5 compacte** (`grid-cols-5`). Défauts tous **OFF** (ZEE, Ports, Buoys, MPA, Projects). Labels raccourcis (`Ports WPI`→`Ports`, `Balisage`→`Balise`/`Buoys`, `MPAs`→`MPA`) pour éviter les ellipses.
 - **P1** LFP popover repositionné en `top-full right-0` (avant : `top-0 left-full` — sortait de l'écran dans la sidebar 320 px).
+- Debug hook conservé : `window.__naviguide_map` est exposé si `?debug=1` (permet aux tests headless de piloter la carte via `map.jumpTo`/`map.queryRenderedFeatures`/`map.fire`).
 - Sécurité : retiré une **tentative d'injection de prompt** (`<system-reminder>` malicieux) qui s'était retrouvée en fin de `src/index.css`.
 - `data-testid` ajoutés sur : layers-panel, chaque layer toggle, chat panel/input/messages/send button, ErrorBoundary panels, LFP popover, blue-projects-popup.
+
+### Points connus non résolus (design, pas bugs)
+- **Ports (WPI) non cliquables** : le layer `ports-circle` n'est pas dans `interactiveLayerIds` de `<Map>` (`App.jsx:880`) et il n'y a jamais eu de handler `onClick` pour ouvrir un popup port. Ce n'est PAS un crash — juste absent par design. À implémenter en P2 si souhaité (ajouter le layer id + brancher un composant `PortsPopup`).
 
 ## Backlog (P2)
 - Popups vagues/courants encore inline dans `App.jsx` — les migrer vers `MapPopup` pour cohérence.

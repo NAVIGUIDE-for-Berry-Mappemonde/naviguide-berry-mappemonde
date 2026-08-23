@@ -40,7 +40,6 @@ export function MapPopup({
       onClose={onClose}
       closeOnClick={false}
       closeButton={false}
-      anchor="auto"
       maxWidth={`${maxWidth}px`}
       className="naviguide-popup"
     >

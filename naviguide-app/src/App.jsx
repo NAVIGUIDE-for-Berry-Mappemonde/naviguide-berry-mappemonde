@@ -903,6 +903,13 @@ export default function App() {
         onMouseLeave={() => { if (!drawingMode) setRouteCursor("crosshair"); }}
         onLoad={(event) => {
           const map = event.target;
+          // Debug hook: expose the MapLibre instance on window when ?debug=1
+          // so QA tools (Playwright headless) can drive the map programmatically
+          // (query features, fire synthetic clicks). Harmless in production.
+          if (typeof window !== "undefined" &&
+              /[?&]debug=1(?:&|$)/.test(window.location.search)) {
+            window.__naviguide_map = map;
+          }
           const arrowSvg = `
             <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#0077ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right-icon lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg>          `;
 
