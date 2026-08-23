@@ -107,6 +107,7 @@ log.info("Multi-Agent Orchestrator compiled and ready.")
 import time as _time_mod
 BERRY_PLAN_CACHE_TTL_S = int(os.getenv("BERRY_PLAN_CACHE_TTL_S", "3600"))
 _berry_plan_cache: dict = {}   # {key_tuple: (unix_ts, response_dict)}
+log.info(f"Berry-Mappemonde plan cache TTL = {BERRY_PLAN_CACHE_TTL_S}s ({BERRY_PLAN_CACHE_TTL_S/3600:.1f}h)")
 
 def _cache_get(key):
     if BERRY_PLAN_CACHE_TTL_S <= 0:
