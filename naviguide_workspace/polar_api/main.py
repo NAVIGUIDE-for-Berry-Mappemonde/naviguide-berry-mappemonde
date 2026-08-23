@@ -10,7 +10,7 @@ GET  /                                      Health check
 POST /api/v1/polar/upload                   Upload PDF → parse → store 181×61 grid
 GET  /api/v1/polar/{expedition_id}          Retrieve full polar grid (181×61)
 GET  /api/v1/polar/{expedition_id}/summary  VMG summary only (lightweight, for briefing agents)
-POST /api/v1/polar/chat                     Polar agent chat (VMG-aware, Anthropic-backed)
+POST /api/v1/polar/chat                     Polar agent chat (VMG-aware, Groq-backed)
 """
 
 import json
@@ -27,17 +27,72 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# Load workspace .env (ANTHROPIC_API_KEY)
+# Load workspace .env (GROQ_API_KEY)
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-# Anthropic client (optional — chat falls back gracefully)
-try:
-    import anthropic as _anthropic
-    _ANTHROPIC_CLIENT    = _anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    _ANTHROPIC_AVAILABLE = bool(os.getenv("ANTHROPIC_API_KEY"))
-except Exception:
-    _ANTHROPIC_CLIENT    = None
-    _ANTHROPIC_AVAILABLE = False
+import httpx as _httpx
+
+# ── Groq (primary) ─────────────────────────────────────────────────────────────
+_GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
+_GROQ_MODEL    = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+_GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# ── OpenRouter (fallback) ──────────────────────────────────────────────────────
+_OR_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
+_OR_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+_OR_HEADERS  = {"HTTP-Referer": "http://localhost:5173", "X-Title": "NAVIGUIDE"}
+_OR_MODELS   = [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemma-4-31b-it:free",
+]
+_FALLBACK_STATUSES = {429, 503}
+
+
+def _call_llm(messages: list, max_tokens: int = 300) -> tuple:
+    """
+    Call LLM: Groq primary → OpenRouter cascade on 429 / 503 / failure.
+
+    Returns:
+        (reply: str, source: str) — source is 'groq', 'openrouter', or 'fallback'.
+    """
+    # 1 — Try Groq
+    if _GROQ_API_KEY:
+        try:
+            resp = _httpx.post(
+                _GROQ_BASE_URL,
+                headers={"Authorization": f"Bearer {_GROQ_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={"model": _GROQ_MODEL, "max_tokens": max_tokens,
+                      "temperature": 0.2, "messages": messages},
+                timeout=30.0,
+            )
+            if resp.status_code not in _FALLBACK_STATUSES:
+                resp.raise_for_status()
+                return resp.json()["choices"][0]["message"]["content"], "groq"
+        except Exception as exc:
+            log.warning(f"Groq unavailable ({exc}) — trying OpenRouter")
+
+    # 2 — OpenRouter cascade
+    if _OR_API_KEY:
+        for model in _OR_MODELS:
+            try:
+                resp = _httpx.post(
+                    _OR_BASE_URL,
+                    headers={"Authorization": f"Bearer {_OR_API_KEY}",
+                             "Content-Type": "application/json", **_OR_HEADERS},
+                    json={"model": model, "max_tokens": max_tokens,
+                          "temperature": 0.2, "messages": messages},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                content = resp.json()["choices"][0]["message"]["content"]
+                if content:
+                    return content, "openrouter"
+            except Exception as exc:
+                log.warning(f"OpenRouter {model} unavailable ({exc})")
+                continue
+
+    return "", "fallback"
 
 # ── Path setup: import polar_engine from polar_agent/ at repo root ─────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent   # naviguide-berry-mappemonde/
@@ -325,8 +380,8 @@ Be concise (max 120 words), precise, and use nautical terms. Always cite specifi
 async def polar_chat(request: PolarChatRequest):
     """
     Chat with the polar agent about boat polar performance.
-    Loads VMG context for the expedition, answers via Anthropic Claude.
-    Falls back to a structured answer if Anthropic is unavailable.
+    Loads VMG context for the expedition, answers via Groq (llama-3.3-70b-versatile).
+    Falls back to a structured answer if Groq is unavailable.
     """
     dest = _polar_path(request.expedition_id)
     if not dest.exists():
@@ -340,27 +395,16 @@ async def polar_chat(request: PolarChatRequest):
 
     system_prompt = _build_polar_system_prompt(polar_data)
 
-    # Build message list for Anthropic
-    messages = [{"role": m["role"], "content": m["content"]} for m in (request.history or [])]
+    # Build OpenAI-compatible message list
+    messages = [{"role": "system", "content": system_prompt}]
+    for m in (request.history or []):
+        messages.append({"role": m["role"], "content": m["content"]})
     messages.append({"role": "user", "content": request.message})
 
     log.info(f"Polar chat: expedition={request.expedition_id}, msg='{request.message[:60]}'")
 
-    if _ANTHROPIC_AVAILABLE and _ANTHROPIC_CLIENT:
-        try:
-            resp = _ANTHROPIC_CLIENT.messages.create(
-                model      = "claude-haiku-4-5",
-                max_tokens = 300,
-                system     = system_prompt,
-                messages   = messages,
-            )
-            reply  = resp.content[0].text
-            source = "anthropic"
-        except Exception as exc:
-            log.warning(f"Anthropic unavailable ({exc}) — using fallback")
-            reply  = _polar_fallback_reply(request.message, polar_data)
-            source = "fallback"
-    else:
+    reply, source = _call_llm(messages, max_tokens=300)
+    if not reply:
         reply  = _polar_fallback_reply(request.message, polar_data)
         source = "fallback"
 

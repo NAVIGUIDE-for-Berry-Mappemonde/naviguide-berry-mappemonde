@@ -1,3 +1,5 @@
+import logging
+log = logging.getLogger("orchestrator")
 """
 NAVIGUIDE — Multi-Agent Orchestrator
 FastAPI entry point — port 3008

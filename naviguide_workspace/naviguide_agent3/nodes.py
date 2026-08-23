@@ -22,25 +22,86 @@ Graph flow:
       END
 """
 
+import os
+import json
+import httpx
 from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage
 
-try:
-    from langchain_aws import ChatBedrock
-    _BEDROCK_AVAILABLE = True
-except (ImportError, Exception):
-    _BEDROCK_AVAILABLE = False
+# ── Groq (primary) + OpenRouter (fallback) ────────────────────────────────────
+_GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
+_GROQ_MODEL    = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+_GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-from .state       import RiskState
-from .risk_engine import RiskAssessmentEngine
+_OR_API_KEY    = os.getenv("OPENROUTER_API_KEY", "")
+_OR_BASE_URL   = "https://openrouter.ai/api/v1/chat/completions"
+_OR_HEADERS    = {"HTTP-Referer": "http://localhost:5173", "X-Title": "NAVIGUIDE"}
+_OR_MODELS     = [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemma-4-31b-it:free",
+]
+_FALLBACK_STATUSES = {429, 503}
 
-_engine = RiskAssessmentEngine()
 
+def _call_openrouter(prompt: str, max_tokens: int = 600):
+    import os
+    import json
+    import urllib.request
+    from pathlib import Path
+    from dotenv import load_dotenv
 
-# ─────────────────────────────────────────────────────────────────────────────
-# NODE 1 — parse_risk_request
-# ─────────────────────────────────────────────────────────────────────────────
+    root_dir = Path(__file__).resolve().parents[2]
+    env_file = root_dir / "naviguide-api" / ".env"
+    load_dotenv(env_file)
 
+    key = os.getenv("OPENROUTER_API_KEY", "").replace('"', '').replace("'", "").strip()
+    if not key:
+        print("❌ AGENT3: OPENROUTER_API_KEY introuvable")
+        return None
+
+    models_to_try = [
+        "nvidia/nemotron-nano-12b-v2-vl:free",
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "google/gemma-2-9b-it:free",
+        "qwen/qwen-2.5-72b-instruct:free"
+    ]
+
+    messages = [
+        {"role": "system", "content": "Tu es le Directeur d'Expédition NAVIGUIDE. Rédige un briefing hauturier complet, ultra-professionnel et direct en français. Ne montre AUCUNE réflexion interne ni texte en anglais."},
+        {"role": "user", "content": prompt}
+    ]
+
+    for model in models_to_try:
+        try:
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                data=json.dumps({
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "provider": {"data_collection": "allow"}
+                }).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:5173"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                if "choices" in res and len(res["choices"]) > 0:
+                    content = res["choices"][0]["message"].get("content") or ""
+                    lines_clean = [l for l in content.splitlines() if "thinking process" not in l.lower()]
+                    content = "\n".join(lines_clean).strip()
+                    if content:
+                        print(f"✅ AGENT3: Briefing généré en direct via {model} !")
+                        return content
+        except Exception as e:
+            err_msg = e.read().decode('utf-8') if hasattr(e, 'read') else str(e)
+            print(f"❌ AGENT3: Échec sur {model} -> {err_msg[:120]}")
+            continue
+
+    return None
 def parse_risk_request_node(state: RiskState) -> RiskState:
     """Validate input waypoints and extract departure month."""
     waypoints = state.get("waypoints", [])
@@ -235,15 +296,9 @@ Professional maritime tone. Max 200 words total."""
 
     summary = ""
 
-    if _BEDROCK_AVAILABLE:
-        try:
-            llm     = ChatBedrock(model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0", region_name="us-east-1")
-            summary = llm.invoke([HumanMessage(content=prompt)]).content
-        except Exception as exc:
-            summary = (
-                f"LLM risk analyst unavailable ({exc}). "
-                "Manual review of CRITICAL/HIGH waypoints recommended."
-            )
+    summary = _call_openrouter(prompt, max_tokens=400)
+    if not summary:
+        summary = ""
 
     if not summary:
         summary = (

@@ -68,20 +68,28 @@ fi
 info "Starting naviguide-api on :8000..."
 API_DIR="$PROJECT_ROOT/naviguide-api"
 # Always write the API .env to ensure correct credentials and port
+if [ ! -f "$API_DIR/.env" ]; then
 cat > "$API_DIR/.env" <<'ENVEOF'
 COPERNICUS_USERNAME=berrymappemonde@gmail.com
 COPERNICUS_PASSWORD=Hackmyroute2027$
 PORT=8000
-# ── Agents IA simulation — Anthropic Claude (obligatoire pour les agents) ─
-# Renseigner ANTHROPIC_API_KEY pour activer les 4 agents IA en mode simulation.
+# ── Agents IA simulation — Groq (obligatoire pour les agents) ─────────────
+# Renseigner GROQ_API_KEY pour activer les 4 agents IA en mode simulation.
 # Sans cette clé, les agents affichent un contenu de fallback statique.
-ANTHROPIC_API_KEY=
-# Modèle optionnel (défaut : claude-opus-4-5)
-ANTHROPIC_MODEL=claude-opus-4-5
+GROQ_API_KEY=
+# Modèle optionnel (défaut : qwen/qwen3.6-27b)
+# GROQ_MODEL=qwen/qwen3.6-27b
+# GROQ_MAX_TOKENS=1024
+# ── OpenRouter — Fallback si quota Groq épuisé (optionnel) ───────────────
+# Cascade : Groq → nvidia/nemotron-3-ultra-550b-a55b:free → google/gemma-4-31b-it:free
+OPENROUTER_API_KEY=
+# OPENROUTER_MODEL_1=nvidia/nemotron-3-ultra-550b-a55b:free
+# OPENROUTER_MODEL_2=google/gemma-4-31b-it:free
 # ── Agent météo — StormGlass (optionnel) ──────────────────────────────────
 # Données météo live. Sans clé, l'agent météo utilise la climatologie LLM.
 STORMGLASS_API_KEY=
 ENVEOF
+fi
 API_LOG="$LOG_DIR/naviguide-api.log"
 (cd "$API_DIR" && nohup $PYTHON main.py > "$API_LOG" 2>&1) &
 API_PID=$!

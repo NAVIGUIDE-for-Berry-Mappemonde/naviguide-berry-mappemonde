@@ -23,14 +23,66 @@ import os
 import urllib.request
 import urllib.error
 import json
+import httpx
 from datetime import datetime
 from langchain_core.messages import HumanMessage, AIMessage
 
-try:
-    from langchain_aws import ChatBedrock
-    _BEDROCK_AVAILABLE = True
-except (ImportError, Exception):
-    _BEDROCK_AVAILABLE = False
+# ── Groq (primary) + OpenRouter (fallback) ────────────────────────────────────
+_GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
+_GROQ_MODEL    = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+_GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+_OR_API_KEY    = os.getenv("OPENROUTER_API_KEY", "")
+_OR_BASE_URL   = "https://openrouter.ai/api/v1/chat/completions"
+_OR_HEADERS    = {"HTTP-Referer": "http://localhost:5173", "X-Title": "NAVIGUIDE"}
+_OR_MODELS     = [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemma-4-31b-it:free",
+]
+_FALLBACK_STATUSES = {429, 503}
+
+
+def _call_groq(prompt: str, max_tokens: int = 300) -> str:
+    """Call LLM: Groq primary → OpenRouter fallback on 429 / 503 / failure."""
+    messages = [{"role": "user", "content": prompt}]
+
+    # 1 — Try Groq
+    if _GROQ_API_KEY:
+        try:
+            resp = httpx.post(
+                _GROQ_BASE_URL,
+                headers={"Authorization": f"Bearer {_GROQ_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={"model": _GROQ_MODEL, "max_tokens": max_tokens,
+                      "temperature": 0.2, "messages": messages},
+                timeout=30.0,
+            )
+            if resp.status_code not in _FALLBACK_STATUSES:
+                resp.raise_for_status()
+                return resp.json()["choices"][0]["message"]["content"]
+        except Exception:
+            pass
+
+    # 2 — OpenRouter cascade
+    if _OR_API_KEY:
+        for model in _OR_MODELS:
+            try:
+                resp = httpx.post(
+                    _OR_BASE_URL,
+                    headers={"Authorization": f"Bearer {_OR_API_KEY}",
+                             "Content-Type": "application/json", **_OR_HEADERS},
+                    json={"model": model, "max_tokens": max_tokens,
+                          "temperature": 0.2, "messages": messages},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                content = resp.json()["choices"][0]["message"]["content"]
+                if content:
+                    return content
+            except Exception:
+                continue
+
+    return ""
 
 from .state  import RouteState
 from .router import BerryMappemondeRouter
@@ -231,15 +283,9 @@ Tone: professional, concise, offshore-sailing expertise. Max 120 words."""
 
     advice = ""
 
-    if _BEDROCK_AVAILABLE:
-        try:
-            llm    = ChatBedrock(model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0", region_name="us-east-1")
-            advice = llm.invoke([HumanMessage(content=prompt)]).content
-        except Exception as exc:
-            advice = (
-                f"LLM advisor unavailable ({exc}). "
-                "Manual review recommended for segments scoring below 0.70."
-            )
+    advice = _call_groq(prompt, max_tokens=300)
+    if not advice:
+        advice = ""
 
     if not advice:
         advice = (
